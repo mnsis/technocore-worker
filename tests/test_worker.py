@@ -38,7 +38,9 @@ def build_worker(tmp_path: Path) -> tuple[Worker, FakeSender, State]:
     return worker, sender, state
 
 
-def signed_record(key: Ed25519PrivateKey, job: str = "job-1", sequence: int = 1) -> dict:
+def signed_record(
+    key: Ed25519PrivateKey, job: str = "job-1", sequence: int = 1
+) -> dict[str, object]:
     return {
         "from": public_did(key),
         "nonce": 100,

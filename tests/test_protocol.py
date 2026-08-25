@@ -6,6 +6,7 @@ import json
 import pytest
 
 from worker.protocol import (
+    EchoRequest,
     ProtocolError,
     analyze,
     canonical_request,
@@ -18,6 +19,7 @@ REPLY = "mb-p-0123456789abcdef01234567"
 def test_valid_request_and_deterministic_analysis() -> None:
     wire = canonical_request("job-1", REPLY, "hello deterministic world")
     request = parse_request(wire)
+    assert isinstance(request, EchoRequest)
     assert request.job_id == "job-1"
     assert request.reply_room == REPLY
     assert analyze(request.text) == {

@@ -1,0 +1,25 @@
+:root { color-scheme: light; font: 16px/1.55 system-ui, sans-serif; color: #17201b; background: #edf1ed; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { width: min(900px, calc(100% - 32px)); margin: 40px auto 80px; }
+header, section, aside { background: #fff; border: 1px solid #ced8d0; border-radius: 14px; padding: 24px; margin: 16px 0; box-shadow: 0 8px 30px #1e3b2910; }
+h1 { font-size: clamp(1.8rem, 5vw, 3rem); line-height: 1.1; margin: .3rem 0 1rem; }
+h2 { display: flex; gap: 10px; align-items: center; }
+h2 span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #164c34; color: white; font-size: .9rem; }
+h3 { margin-top: 0; }
+.eyebrow { color: #31634c; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; font-size: .75rem; }
+.columns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.panel { background: #f5f7f5; padding: 18px; border-radius: 10px; }
+label { display: block; margin: 12px 0; font-weight: 650; }
+input { display: block; width: 100%; margin-top: 5px; border: 1px solid #99a79e; border-radius: 7px; padding: 10px; font: inherit; }
+button, a[download] { display: inline-block; border: 0; border-radius: 7px; padding: 10px 15px; color: #fff; background: #164c34; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+button.secondary { background: #3f5147; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.identity { margin-top: 16px; padding: 16px; border: 1px solid #80a68f; border-radius: 10px; background: #f2faf5; }
+code { display: block; margin: 8px 0 16px; word-break: break-all; }
+pre { white-space: pre-wrap; word-break: break-word; background: #17201b; color: #dceddf; border-radius: 8px; padding: 16px; min-height: 80px; }
+#status { padding: 10px 12px; border-left: 4px solid #78867d; background: #f4f6f4; }
+#status[data-kind="ok"] { border-color: #21844d; }
+#status[data-kind="error"] { border-color: #b32d35; color: #771b21; }
+aside { font-size: .92rem; background: #fff9e9; border-color: #decf9c; }
+@media (max-width: 650px) { .columns { grid-template-columns: 1fr; } main { margin-top: 16px; } header, section, aside { padding: 18px; } }

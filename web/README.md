@@ -1,0 +1,65 @@
+# Browser identity prototype
+
+This is a loopback-only Phase 3A prototype. Run `technocore-worker web`, then open
+`http://127.0.0.1:18787`. It is not designed or configured for public deployment.
+
+## Cryptographic compatibility
+
+- Ed25519 keys come from WebCrypto and are exported as PKCS#8
+  `EncryptedPrivateKeyInfo` PEM (`BEGIN ENCRYPTED PRIVATE KEY`).
+- Encryption uses standard PBES2 with PBKDF2-HMAC-SHA256 (600,000 iterations, 16-byte
+  salt) and AES-256-CBC with a random 16-byte IV. Python `cryptography` loads this
+  stronger browser profile. Browser import also accepts Python `BestAvailableEncryption`,
+  whose current OpenSSL-generated PBES2 profile uses a lower fixed iteration count.
+  Unencrypted and non-PBES2 PEM are rejected.
+- The DID is `did:key:` plus multibase base58btc (`z`) of the Ed25519 public-key
+  multicodec prefix `0xed01` followed by the raw 32-byte public key.
+- Message normalization replaces Unicode categories Cc, Cf, Cs, Co, Zl, and Zp with
+  ASCII space, then strips leading/trailing whitespace. The signed UTF-8 bytes are
+  `<room>|<nonce>|<normalized-text>`. Signatures are unpadded base64url Ed25519.
+
+The private key is extractable because encrypted PKCS#8 export is a requirement. It
+stays in JavaScript memory and is not written to browser storage. Reloading or closing
+the page loses it. The downloaded encrypted PEM is the only persistence mechanism.
+
+## Network boundary
+
+The browser connects only to the same-origin local prototype. Its two Technocore proxy
+routes are fixed-purpose: one accepts only the four public signed-write fields and only
+a valid `contribution-verify` request; the other reads only a syntactically valid private
+reply mailbox. The challenge verifier accepts only DID, challenge, and signature. No
+route accepts PEM, passphrase, seed phrase, or private-key fields.
+
+## Browser support and trust
+
+Current Chromium, Firefox, and Safari versions with WebCrypto Ed25519, PBKDF2-SHA256,
+and AES-CBC are targeted. There is no fallback when a primitive is unavailable.
+
+This is not absolute non-leakage. The current served JavaScript handles the key locally.
+An XSS bug, compromised frontend origin, malicious dependency, malicious browser
+extension, or future compromised server response could steal it. The prototype has no
+runtime dependencies, uses no HTML injection sinks, logs no secrets, applies a strict
+CSP, disables browser persistence, discourages autofill, and avoids clipboard features.
+Those controls do not protect against a browser extension or an origin that serves
+malicious JavaScript. Passphrases remain JavaScript strings until garbage-collected;
+JavaScript cannot reliably zero them. Downloaded PEMs inherit the browser and operating
+system's file handling and permissions.
+
+Challenge proofs are random, expire after two minutes, are consumed on the first verify
+attempt, and bind purpose, local origin, random session identifier, challenge, and expiry.
+Success means only: “Control of this DID was demonstrated for this session.”
+
+Challenges and rate-limit counters are held in bounded process memory. Restarting the
+web process invalidates all outstanding challenges, so a pre-restart challenge cannot be
+replayed afterward. Limits per direct client IP per minute are 20 challenge creations,
+20 verification attempts, five Technocore forwards, and 120 reply polls. Forwarded-IP
+headers are deliberately ignored.
+
+For production, run the frontend and proxy together on the VPS behind one TLS-terminating
+Nginx virtual host and pass that exact HTTPS origin with `--public-origin`. Do not expose
+the Python listener directly. Configure Nginx with the same single hostname, request and
+connection limits, HSTS, and no mutable third-party assets. A pinned same-origin VPS
+deployment keeps the JavaScript that handles private keys in the same reviewed release as
+the proxy; a separately mutable Vercel frontend would add another deployment control plane
+to the private-key trust boundary. Record and expose the exact served source commit in a
+future release manifest or restrained footer.

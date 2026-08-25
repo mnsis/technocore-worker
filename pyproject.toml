@@ -22,7 +22,7 @@ Repository = "https://github.com/mnsis/technocore-worker"
 Issues = "https://github.com/mnsis/technocore-worker/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=9,<10", "ruff>=0.16,<1", "mypy>=2.3,<3"]
+dev = ["pytest>=9,<10", "ruff>=0.16,<1", "mypy>=2.3,<3", "pip-audit>=2.9,<3"]
 
 [project.scripts]
 technocore-worker = "worker.cli:main"
