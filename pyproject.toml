@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "technocore-worker"
+version = "0.2.0"
+description = "Signed Technocore worker for bounded contribution checks."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["cryptography>=50,<51"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet",
+    "Topic :: Security",
+]
+
+[project.urls]
+Repository = "https://github.com/mnsis/technocore-worker"
+Issues = "https://github.com/mnsis/technocore-worker/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10", "ruff>=0.16,<1", "mypy>=2.3,<3"]
+
+[project.scripts]
+technocore-worker = "worker.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.setuptools.packages.find]
+include = ["worker*"]
