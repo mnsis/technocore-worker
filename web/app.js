@@ -5,6 +5,30 @@ let privateKey = null; let did = null; let downloaded = false; let controlProved
 const byId = (id) => document.getElementById(id);
 const status = (message, kind = "") => { byId("status").textContent = message; byId("status").dataset.kind = kind; };
 byId("contribution").noValidate = true;
+const fieldRules = {
+  repository: { valid: (value) => /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(value), message: "Use owner/repository format." },
+  commit: { valid: (value) => /^[0-9a-fA-F]{40}$/.test(value), message: "Enter the full 40-character commit SHA." },
+  path: { valid: (value) => !value || /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(value), message: "Use a valid relative path." },
+};
+const touchedFields = new Set();
+for (const [name, rule] of Object.entries(fieldRules)) {
+  const input = byId(name); const error = document.createElement("p");
+  error.id = `${name}-error`; error.className = "field-error"; error.hidden = true; error.setAttribute("role", "alert");
+  input.setAttribute("aria-describedby", error.id); input.insertAdjacentElement("afterend", error);
+  input.addEventListener("input", () => { touchedFields.add(name); validateContribution(); });
+  input.addEventListener("blur", () => { touchedFields.add(name); validateContribution(); });
+  error.textContent = rule.message;
+}
+
+function validateContribution(showAll = false) {
+  let valid = Boolean(privateKey && controlProved);
+  for (const [name, rule] of Object.entries(fieldRules)) {
+    const input = byId(name); const value = input.value.trim(); const fieldValid = rule.valid(value);
+    valid &&= fieldValid; const showError = !fieldValid && (showAll || touchedFields.has(name));
+    input.setAttribute("aria-invalid", String(showError)); byId(`${name}-error`).hidden = !showError;
+  }
+  byId("send").disabled = !valid; return valid;
+}
 
 function selectIdentityPanel(name) {
   const create = name === "create";
@@ -19,8 +43,8 @@ byId("show-import").addEventListener("click", () => selectIdentityPanel("import"
 function revokePemBlobUrl() { if (!pemBlobUrl) return; URL.revokeObjectURL(pemBlobUrl); pemBlobUrl = null; byId("download").removeAttribute("href"); }
 function showIdentity() {
   controlProved = false; byId("did").textContent = did; byId("identity-ready").hidden = false;
-  byId("prove").disabled = false; byId("proof-result").textContent = "Ready to demonstrate control.";
-  byId("contribution-fields").disabled = true; byId("send").disabled = true; status("Identity ready", "ok");
+  byId("prove").hidden = false; byId("prove").disabled = false; byId("proof-result").classList.remove("completed"); byId("proof-result").textContent = "Ready to demonstrate control.";
+  byId("contribution-fields").disabled = true; touchedFields.clear(); validateContribution(); status("Identity ready", "ok");
 }
 
 byId("create").addEventListener("click", async () => {
@@ -52,11 +76,11 @@ byId("prove").addEventListener("click", async () => {
     const challenge = await challengeResponse.json(); const signature = await sign(privateKey, challenge.payload);
     const result = await fetch("/api/challenge/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, challenge: challenge.challenge, signature }) });
     if (!result.ok) throw new Error((await result.json()).error || "DID control proof failed.");
-    controlProved = true; byId("proof-result").textContent = "DID control demonstrated"; byId("contribution-fields").disabled = false; byId("send").disabled = false; status("DID control demonstrated", "ok");
+    controlProved = true; byId("prove").hidden = true; byId("proof-result").classList.add("completed"); byId("proof-result").textContent = "✓ DID control demonstrated"; byId("contribution-fields").disabled = false; validateContribution(); status("DID control demonstrated", "ok");
   } catch (error) { byId("prove").disabled = false; status(error.message, "error"); }
 });
 
-byId("example").addEventListener("click", () => { byId("repository").value = "paiin-arc/technocore-beginner-guide"; byId("commit").value = "93dab08e185121186d009f9b637a37365c294ea1"; byId("path").value = ""; });
+byId("example").addEventListener("click", () => { byId("repository").value = "paiin-arc/technocore-beginner-guide"; byId("commit").value = "93dab08e185121186d009f9b637a37365c294ea1"; byId("path").value = ""; touchedFields.clear(); validateContribution(); });
 async function sha256(text) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))); return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function progress(step) { const order = ["prepare", "sent", "waiting", "received"]; const current = order.indexOf(step); for (const item of byId("progress").children) { const index = order.indexOf(item.dataset.step); item.className = index < current ? "done" : index === current ? "active" : ""; } }
 async function pollReply(reply, expected) {
@@ -78,11 +102,8 @@ function showResult(result, elapsed) {
 }
 byId("contribution").addEventListener("submit", async (event) => {
   event.preventDefault(); try {
-    if (!privateKey || !controlProved) throw new Error("Demonstrate DID control first.");
+    if (!validateContribution(true)) return;
     const repository = byId("repository").value.trim(); const commit = byId("commit").value.trim(); const path = byId("path").value.trim();
-    if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("Repository must use owner/repository format.");
-    if (!/^[0-9a-fA-F]{40}$/.test(commit)) throw new Error("Commit must be a full 40-character SHA.");
-    if (path && !/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path)) throw new Error("Optional file must be a relative path.");
     if (!downloaded && !confirm("You have not downloaded identity.pem. Continue without a recoverable encrypted copy?")) return;
     byId("send").disabled = true; byId("result-card").hidden = true; const started = performance.now(); progress("prepare"); status("Preparing signed request");
     const job = freshJobId(); const reply = freshReplyMailbox(); const nonce = freshNonce();
@@ -96,7 +117,7 @@ byId("contribution").addEventListener("submit", async (event) => {
     if (result.worker !== WORKER_DID || result.request.did !== did) throw new Error("Worker response identity mismatch.");
     progress("received"); showResult(result, performance.now() - started); status("Response received", "ok");
   } catch (error) { status(error.name === "AbortError" ? "Polling stopped." : error.message, "error"); }
-  finally { byId("send").disabled = !controlProved; pollAbort = null; }
+  finally { validateContribution(); pollAbort = null; }
 });
 
 fetch("/api/meta", { headers: { Accept: "application/json" }, cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()).then((meta) => { byId("served-commit").textContent = meta.commit; }).catch(() => { byId("served-commit").textContent = "unavailable"; });

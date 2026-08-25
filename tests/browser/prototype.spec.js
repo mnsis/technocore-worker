@@ -7,7 +7,17 @@ async function createIdentity(page) {
   await page.goto("/"); await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#confirm-passphrase").fill(PASSPHRASE); await page.locator("#create").click();
   await expect(page.locator("#status")).toHaveText("Identity ready"); return page.locator("#did").textContent();
 }
-async function prove(page) { await page.locator("#prove").click(); await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated"); }
+async function prove(page) { await page.locator("#prove").click(); await expect(page.locator("#proof-result")).toHaveText("✓ DID control demonstrated"); }
+
+test("gates checking on proof and valid fields with inline errors", async ({ page }) => {
+  await page.goto("/"); await expect(page.locator("#send")).toBeDisabled();
+  await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#confirm-passphrase").fill(PASSPHRASE); await page.locator("#create").click(); await expect(page.locator("#status")).toHaveText("Identity ready");
+  await prove(page); await expect(page.locator("#prove")).toBeHidden(); await expect(page.locator("#send")).toBeDisabled();
+  await page.locator("#repository").fill("invalid repository"); await expect(page.locator("#repository-error")).toHaveText("Use owner/repository format."); await expect(page.locator("#status")).toHaveText("DID control demonstrated"); await expect(page.locator("#send")).toBeDisabled();
+  await page.locator("#repository").fill("owner/repository"); await page.locator("#commit").fill("abc123"); await expect(page.locator("#commit-error")).toHaveText("Enter the full 40-character commit SHA."); await expect(page.locator("#send")).toBeDisabled();
+  await page.locator("#send").evaluate((button) => { button.disabled = false; button.form.requestSubmit(); }); await expect(page.locator("#progress .active")).toHaveCount(0); await expect(page.locator("#status")).toHaveText("DID control demonstrated");
+  await page.locator("#example").click(); await expect(page.locator("#repository")).toHaveValue("paiin-arc/technocore-beginner-guide"); await expect(page.locator("#commit")).toHaveValue("93dab08e185121186d009f9b637a37365c294ea1"); await expect(page.locator("#path")).toHaveValue(""); await expect(page.locator("#send")).toBeEnabled();
+});
 
 test("creates, downloads, proves control, protects network data, and clears on reload", async ({ page }) => {
   await page.addInitScript(() => { const original = URL.revokeObjectURL.bind(URL); window.__revokedPemUrls = []; URL.revokeObjectURL = (value) => { window.__revokedPemUrls.push(value); original(value); }; });
@@ -25,7 +35,7 @@ test("imports PEM, rejects wrong password, validates inputs, optional path, and 
   await createIdentity(page); const downloadPromise = page.waitForEvent("download"); await page.locator("#download").click(); const pemPath = await (await downloadPromise).path(); await page.reload();
   await page.locator("#show-import").click(); await page.locator("#pem-file").setInputFiles(pemPath); await page.locator("#import-passphrase").fill("wrong password here"); await page.locator("#import").click(); await expect(page.locator("#status")).toContainText("Incorrect passphrase");
   await page.locator("#import-passphrase").fill(PASSPHRASE); await page.locator("#import").click(); await expect(page.locator("#status")).toHaveText("Identity ready"); const did = await page.locator("#did").textContent(); await prove(page);
-  await page.locator("#repository").fill("bad repository"); await page.locator("#commit").fill("short"); await page.locator("#send").click(); await expect(page.locator("#status")).toContainText("owner/repository");
+  await page.locator("#repository").fill("bad repository"); await page.locator("#commit").fill("short"); await expect(page.locator("#repository-error")).toBeVisible(); await expect(page.locator("#commit-error")).toBeVisible(); await expect(page.locator("#status")).toHaveText("DID control demonstrated");
   let expected; await page.route("**/api/technocore/request", async (route) => { const body = route.request().postDataJSON(); const request = JSON.parse(body.text); expect(request.path).toBe("README.md"); expected = { request, hash: createHash("sha256").update(body.text).digest("hex") }; await route.fulfill({ json: { posted: { seq: 7, from: did, text: body.text } } }); });
   await page.route("**/api/technocore/reply?*", async (route) => route.fulfill({ json: { room: expected.request.reply, last_seq: 1, messages: [{ from: WORKER_DID, text: JSON.stringify({ capability: "contribution-verify", checks: { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "CONFIRMED" } }, job: expected.request.job, request: { did, room: "mb-technocore-worker", sha256: expected.hash }, status: "completed", v: "tc-worker/v1", worker: WORKER_DID }) }] } }));
   await page.locator("#repository").fill("paiin-arc/technocore-beginner-guide"); await page.locator("#commit").fill("93dab08e185121186d009f9b637a37365c294ea1"); await page.locator("#path").fill("README.md"); await page.locator("#send").click();

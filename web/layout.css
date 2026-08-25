@@ -1,1 +1,3 @@
 [hidden] { display: none !important; }
+.field-error { color: var(--red); font-size: .78rem; margin: -8px 0 12px; }
+.inline-result.completed { color: var(--green); font-weight: 800; }
