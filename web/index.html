@@ -76,8 +76,9 @@
           </div>
 
           <div id="checking" hidden>
-            <p class="kicker">Checking</p><h2 id="checking-repository"></h2><code id="checking-commit"></code>
-            <ol id="execution" class="execution" aria-live="polite"><li data-step="signed">Request signed</li><li data-step="sent">Sent to Technocore</li><li data-step="waiting">Waiting for worker</li></ol>
+            <p class="kicker">Checking</p>
+            <div class="job-layout"><div class="job-target"><h2 id="checking-repository"></h2><code id="checking-commit"></code></div>
+            <ol id="execution" class="execution" aria-live="polite"><li data-step="signed">Request signed</li><li data-step="sent">Sent to Technocore</li><li data-step="waiting"><span class="activity" aria-hidden="true"><i></i><i></i><i></i></span><span>Waiting for worker</span><time id="waiting-elapsed">0.0s</time></li></ol></div>
           </div>
         </div>
 

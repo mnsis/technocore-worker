@@ -2,3 +2,27 @@
 .control-summary.completed .spinner::after { content: "✓"; color: var(--green); font-size: 1.2rem; }
 .control-summary.completed .summary-main { display: flex; align-items: baseline; gap: 9px; }
 .control-summary.completed .summary-main p { margin: 0; }
+.job-active .intro { padding-top: 24px; padding-bottom: 18px; }
+.job-active .intro h1 { font-size: clamp(1.55rem, 3vw, 2rem); }
+.workspace.job-active { padding-top: 22px; }
+.workspace.job-active .identity-summary { padding-bottom: 12px; }
+.workspace.job-active .identity-summary .summary-main strong { display: inline; margin-right: 8px; }
+.workspace.job-active .identity-summary .summary-main code { display: inline; }
+.workspace.job-active .summary-actions .download { background: none; color: #9dcfdd; padding: 5px 2px; font-size: .78rem; }
+.workspace.job-active .summary-actions .quiet { display: none; }
+.workspace.job-active .control-summary { margin-top: 0; padding: 11px 0; }
+.workspace.job-active .control-summary .summary-main strong { font-size: .8rem; }
+.job-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr); gap: 54px; align-items: start; margin-top: 10px; }
+.job-target h2 { overflow-wrap: anywhere; }
+.job-target code { display: block; margin-top: 7px; color: #b8c4d5; }
+.job-layout .execution { margin: 0; }
+.execution li[data-step="waiting"] { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; }
+.execution li[data-step="waiting"]::before { content: none; }
+.execution time { color: var(--muted); font: .75rem ui-monospace, monospace; }
+.activity { display: inline-flex; align-items: center; gap: 2px; width: 18px; }
+.activity i { width: 3px; height: 3px; border-radius: 50%; background: var(--accent); animation: activity 1.1s ease-in-out infinite; }
+.activity i:nth-child(2) { animation-delay: .14s; }
+.activity i:nth-child(3) { animation-delay: .28s; }
+@keyframes activity { 0%, 70%, 100% { opacity: .28; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .activity i, .spinner, .execution li.active::before { animation: none !important; transform: none !important; opacity: .75; } }
+@media (max-width: 640px) { .job-layout { grid-template-columns: 1fr; gap: 26px; } .job-active .intro h1 { font-size: 1.55rem; } .workspace.job-active .identity-summary .summary-main strong, .workspace.job-active .identity-summary .summary-main code { display: block; } }
