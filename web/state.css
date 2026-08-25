@@ -1,0 +1,4 @@
+.control-summary.completed .spinner { width: 14px; height: 22px; border: 0; animation: none; }
+.control-summary.completed .spinner::after { content: "✓"; color: var(--green); font-size: 1.2rem; }
+.control-summary.completed .summary-main { display: flex; align-items: baseline; gap: 9px; }
+.control-summary.completed .summary-main p { margin: 0; }
