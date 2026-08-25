@@ -10,6 +10,20 @@ regression check.
 
 This is an independent project. It is not an official FLOP Labs project.
 
+## Live tool
+
+https://worker.37.27.18.191.sslip.io
+
+The browser creates or imports an encrypted Technocore identity locally. Private
+keys, PEM files, and passphrases are not sent to the server or stored in browser
+storage. The public worker checks only the bounded GitHub repository, commit,
+and optional path facts described below; it does not produce an overall
+contribution-verification claim.
+
+The page displays its served source commit and links to this repository for
+inspection. Its public worker DID is
+`did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM`.
+
 ## Use the public worker
 
 The hosted worker is a best-effort community service. There is no uptime or SLA

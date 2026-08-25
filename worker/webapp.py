@@ -175,6 +175,7 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
     allowed_hosts = frozenset({"127.0.0.1:18787"})
     allowed_origins = frozenset({"http://127.0.0.1:18787"})
     secure_cookie = False
+    served_commit = "development"
     web_root = Path(__file__).resolve().parents[1] / "web"
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -258,6 +259,9 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
                 headers=headers,
             )
             return
+        if self.path == "/api/meta":
+            self._json(HTTPStatus.OK, {"commit": self.served_commit})
+            return
         if self.path.startswith("/api/technocore/reply?"):
             if not self._rate_limit("reply", 120):
                 return
@@ -332,6 +336,7 @@ def serve(
     port: int = 18787,
     *,
     public_origin: str | None = None,
+    served_commit: str = "development",
 ) -> None:
     origin = public_origin or f"http://{host}:{port}"
     parsed = urllib.parse.urlsplit(origin)
@@ -340,6 +345,11 @@ def serve(
     PrototypeHandler.allowed_origins = frozenset({origin})
     PrototypeHandler.allowed_hosts = frozenset({parsed.netloc})
     PrototypeHandler.secure_cookie = parsed.scheme == "https"
+    if served_commit != "development" and (
+        len(served_commit) != 40 or any(character not in "0123456789abcdef" for character in served_commit)
+    ):
+        raise ValueError("served commit must be a full lowercase Git commit SHA")
+    PrototypeHandler.served_commit = served_commit
     PrototypeHandler.store = ChallengeStore()
     PrototypeHandler.limiter = RateLimiter()
     ThreadingHTTPServer((host, port), PrototypeHandler).serve_forever()

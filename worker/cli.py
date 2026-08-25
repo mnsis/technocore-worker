@@ -25,6 +25,7 @@ def parser() -> argparse.ArgumentParser:
     web.add_argument("--host", default="127.0.0.1", choices=["127.0.0.1", "::1", "localhost"])
     web.add_argument("--port", type=int, default=18787)
     web.add_argument("--public-origin", default=None)
+    web.add_argument("--served-commit", default="development")
     return result
 
 
@@ -39,7 +40,12 @@ def main() -> None:
     if args.command == "web":
         from worker.webapp import serve
 
-        serve(args.host, args.port, public_origin=args.public_origin)
+        serve(
+            args.host,
+            args.port,
+            public_origin=args.public_origin,
+            served_commit=args.served_commit,
+        )
         return
     identity = args.identity or Path(os.environ["TC_WORKER_IDENTITY"])
     database = args.database or Path(os.environ["TC_WORKER_DATABASE"])

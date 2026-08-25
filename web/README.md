@@ -1,7 +1,8 @@
-# Browser identity prototype
+# Browser identity frontend
 
-This is a loopback-only Phase 3A prototype. Run `technocore-worker web`, then open
-`http://127.0.0.1:18787`. It is not designed or configured for public deployment.
+The public frontend is served at `https://worker.37.27.18.191.sslip.io` through
+TLS-terminating Nginx. The Python application remains bound to loopback and uses
+that exact HTTPS origin for Host, Origin, session, and challenge validation.
 
 ## Cryptographic compatibility
 
@@ -24,7 +25,7 @@ the page loses it. The downloaded encrypted PEM is the only persistence mechanis
 
 ## Network boundary
 
-The browser connects only to the same-origin local prototype. Its two Technocore proxy
+The browser connects only to the same-origin frontend. Its two Technocore proxy
 routes are fixed-purpose: one accepts only the four public signed-write fields and only
 a valid `contribution-verify` request; the other reads only a syntactically valid private
 reply mailbox. The challenge verifier accepts only DID, challenge, and signature. No
@@ -55,11 +56,7 @@ replayed afterward. Limits per direct client IP per minute are 20 challenge crea
 20 verification attempts, five Technocore forwards, and 120 reply polls. Forwarded-IP
 headers are deliberately ignored.
 
-For production, run the frontend and proxy together on the VPS behind one TLS-terminating
-Nginx virtual host and pass that exact HTTPS origin with `--public-origin`. Do not expose
-the Python listener directly. Configure Nginx with the same single hostname, request and
-connection limits, HSTS, and no mutable third-party assets. A pinned same-origin VPS
-deployment keeps the JavaScript that handles private keys in the same reviewed release as
-the proxy; a separately mutable Vercel frontend would add another deployment control plane
-to the private-key trust boundary. Record and expose the exact served source commit in a
-future release manifest or restrained footer.
+The production frontend and proxy run together behind a dedicated Nginx virtual host
+with request and connection limits, HSTS, and no mutable third-party assets. The page
+retrieves its served source commit from the same-origin `/api/meta` endpoint and displays
+it in the footer.

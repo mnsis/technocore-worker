@@ -99,7 +99,7 @@ def test_static_network_and_csp_audit() -> None:
     root = Path(__file__).parents[1]
     javascript = "\n".join(path.read_text() for path in (root / "web").glob("*.js"))
     html = (root / "web/index.html").read_text()
-    assert javascript.count("fetch(") == 4
+    assert javascript.count("fetch(") == 5
     assert "https://technocore.chat" not in javascript
     assert not any(term in javascript for term in ("localStorage", "sessionStorage", "indexedDB", "document.cookie"))
     assert not any(term in javascript for term in ("console.log", "console.debug", "console.info"))
@@ -109,9 +109,12 @@ def test_static_network_and_csp_audit() -> None:
         "connect-src 'self'", "object-src 'none'",
         "frame-ancestors 'none'", "base-uri 'none'", "form-action 'self'",
     )
-    assert all(directive in CSP and directive in html for directive in required)
-    without_csp = "\n".join(line for line in html.splitlines() if "Content-Security-Policy" not in line)
-    assert "http://" not in without_csp and "https://" not in without_csp
+    assert all(directive in CSP for directive in required)
+    assert all(directive in html for directive in required if not directive.startswith("frame-ancestors"))
+    assert "frame-ancestors" not in html
+    assert {part.split('"')[0] for part in html.split('href="https://')[1:]} == {
+        "github.com/mnsis/technocore-worker", "x.com/amjawaeth", "x.com/flop_labs"
+    }
 
 
 def test_public_transport_endpoint_rejects_private_fields() -> None:

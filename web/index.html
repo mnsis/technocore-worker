@@ -1,68 +1,17 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'">
-  <meta name="referrer" content="no-referrer">
-  <title>Technocore browser identity prototype</title>
-  <link rel="stylesheet" href="app.css">
-  <script type="module" src="app.js"></script>
-</head>
-<body>
-  <main>
-    <header>
-      <p class="eyebrow">Local prototype · Phase 3A</p>
-      <h1>Technocore identity and contribution proof</h1>
-      <p>Your key never leaves this browser. The current JavaScript handles it locally; a compromised frontend origin or malicious browser extension could defeat that assumption.</p>
-      <p id="status" role="status" aria-live="polite">Create or import an identity to begin.</p>
-    </header>
-
-    <section>
-      <h2><span>1</span> Identity</h2>
-      <div class="columns">
-        <form class="panel" autocomplete="off" onsubmit="return false">
-          <h3>Create Technocore identity</h3>
-          <label>Passphrase (12+ characters)<input id="new-passphrase" type="password" minlength="12" autocomplete="new-password"></label>
-          <label>Confirm passphrase<input id="confirm-passphrase" type="password" minlength="12" autocomplete="new-password"></label>
-          <button id="create" type="button">Create identity</button>
-        </form>
-        <form class="panel" autocomplete="off" onsubmit="return false">
-          <h3>Import existing identity.pem</h3>
-          <label>Encrypted PEM<input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label>
-          <label>Passphrase<input id="import-passphrase" type="password" autocomplete="current-password"></label>
-          <button id="import" type="button">Import locally</button>
-        </form>
-      </div>
-      <div id="identity-ready" class="identity" hidden>
-        <strong>Identity ready</strong>
-        <code id="did"></code>
-        <a id="download" download="identity.pem" hidden>Download identity.pem</a>
-        <p>Download the encrypted identity before continuing. Reloading or closing this page loses the in-memory key.</p>
-        <button id="prove" type="button" class="secondary">Demonstrate DID control for this session</button>
-        <p id="proof-result" aria-live="polite"></p>
-      </div>
-    </section>
-
-    <section>
-      <h2><span>2</span> Contribution</h2>
-      <form id="contribution"><fieldset id="contribution-fields" disabled>
-        <label>Repository <input id="repository" required pattern="[A-Za-z0-9-]+/[A-Za-z0-9_.-]+" placeholder="owner/repository" spellcheck="false"></label>
-        <label>Commit <input id="commit" required pattern="[0-9a-fA-F]{40}" minlength="40" maxlength="40" placeholder="full 40-character SHA" spellcheck="false"></label>
-        <label>Path (optional) <input id="path" placeholder="README.md" spellcheck="false"></label>
-        <button id="send" type="submit">Sign and send request</button>
-      </fieldset></form>
-    </section>
-
-    <section>
-      <h2><span>3</span> Result</h2>
-      <pre id="result">No request sent.</pre>
-    </section>
-
-    <aside>
-      <strong>Security boundary</strong>
-      <p>No PEM, private key, or passphrase is sent or stored. Browser autofill is discouraged but controlled by your browser. Avoid copying private material to the clipboard. Browser extensions and future code served by this origin remain part of the trust boundary.</p>
-    </aside>
-  </main>
-</body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#080d19"><title>Technocore Worker</title><link rel="icon" href="mark.svg" type="image/svg+xml"><link rel="stylesheet" href="app.css"><link rel="stylesheet" href="layout.css"><script type="module" src="app.js"></script></head>
+<body><noscript><div class="noscript">JavaScript is required because identity creation and signing happen locally in your browser.</div></noscript><main>
+<header class="topbar"><div class="brand"><img src="mark.svg" width="38" height="38" alt=""><div><strong>Technocore Worker</strong><span>Community contribution checker</span></div></div><a class="source-link" href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">View source</a></header>
+<section class="intro"><p class="eyebrow">Public browser tool</p><h1>Create a Technocore identity and check a contribution.</h1><p class="lede">Generate or import an encrypted browser identity, demonstrate control of its DID, and ask the existing worker to check bounded public GitHub facts.</p><p id="status" role="status" aria-live="polite">Create or import an identity to begin.</p></section>
+<section class="stage" id="identity-stage"><div class="stage-heading"><span class="number">1</span><div><h2>Identity</h2><p>Create a new identity or import an encrypted backup.</p></div></div><p class="trust"><span aria-hidden="true">◆</span> Your private key and passphrase stay in this browser.</p>
+<div class="choice-tabs" role="tablist" aria-label="Identity action"><button id="show-create" class="tab active" type="button" role="tab" aria-selected="true">Create new identity</button><button id="show-import" class="tab" type="button" role="tab" aria-selected="false">Import identity.pem</button></div>
+<form id="create-panel" class="identity-form" autocomplete="off" onsubmit="return false"><div class="field-grid"><label>Passphrase <span>12+ characters</span><input id="new-passphrase" type="password" minlength="12" autocomplete="new-password"></label><label>Confirm passphrase<input id="confirm-passphrase" type="password" minlength="12" autocomplete="new-password"></label></div><button id="create" type="button">Create identity</button></form>
+<form id="import-panel" class="identity-form" autocomplete="off" onsubmit="return false" hidden><div class="field-grid"><label>Technocore identity.pem<input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label><label>Passphrase<input id="import-passphrase" type="password" autocomplete="current-password"></label></div><p class="warning">Use a Technocore identity.pem only. Never enter a wallet seed phrase or wallet private key.</p><button id="import" type="button">Import locally</button></form>
+<div id="identity-ready" class="ready-card" hidden><div><span class="success-label">Identity ready</span><code id="did"></code></div><a id="download" class="download" download="identity.pem" hidden>Download identity.pem</a><p id="backup-note">Download the encrypted PEM now. It is your backup; reload clears this in-memory identity.</p></div>
+<details><summary>How identity safety works</summary><p>No key, PEM, or passphrase is sent to the server, and no browser storage is used. Reloading clears the identity held in memory. The downloaded encrypted PEM is your backup. A compromised browser, served origin, or browser extension remains part of the trust boundary.</p></details></section>
+<section class="stage" id="control-stage"><div class="stage-heading"><span class="number">2</span><div><h2>DID control</h2><p>Sign a short-lived same-origin challenge locally.</p></div></div><button id="prove" type="button" disabled>Demonstrate DID control</button><p id="proof-result" class="inline-result" aria-live="polite">Identity required.</p></section>
+<section class="stage" id="contribution-stage"><div class="stage-heading"><span class="number">3</span><div><h2>Contribution</h2><p>Enter the public repository facts to check.</p></div></div><form id="contribution"><fieldset id="contribution-fields" disabled><div class="form-head"><span></span><button id="example" class="text-button" type="button">Try example</button></div><label>Repository <span>owner/repository</span><input id="repository" required pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}" placeholder="owner/repository" spellcheck="false"></label><label>Commit <span>full 40-character SHA</span><input id="commit" required pattern="[0-9a-fA-F]{40}" minlength="40" maxlength="40" placeholder="0123456789abcdef…" spellcheck="false"></label><label>Optional file <span>relative/path</span><input id="path" pattern="[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*" maxlength="240" placeholder="docs/guide.md" spellcheck="false"></label></fieldset></form></section>
+<section class="stage" id="check-stage"><div class="stage-heading"><span class="number">4</span><div><h2>Check</h2><p>Sign and send one bounded request to the worker.</p></div></div><button id="send" type="submit" form="contribution" disabled>Check contribution</button><ol id="progress" class="progress" aria-live="polite"><li data-step="prepare">Preparing signed request</li><li data-step="sent">Sent to Technocore</li><li data-step="waiting">Waiting for worker</li><li data-step="received">Response received</li></ol>
+<div id="result-card" class="result-card" hidden><div class="result-grid"><div><span>Repository</span><strong id="result-repository"></strong></div><div><span>Commit</span><strong id="result-commit"></strong></div><div><span>File</span><strong id="result-file"></strong></div><div><span>Response time</span><strong id="result-time"></strong></div></div><dl><dt>Worker</dt><dd><code id="result-worker"></code></dd><dt>Requester DID</dt><dd><code id="result-requester"></code></dd></dl><p class="scope-note">This confirms only the public facts shown above. It does not establish GitHub ownership, commit authorship, contribution quality, FLOP eligibility, or FLOP Labs endorsement.</p></div></section>
+<details class="service-notes"><summary>Service limits and trust boundary</summary><p>This worker is a best-effort community service with no uptime guarantee. GitHub API availability or rate limits may produce UNAVAILABLE. UNAVAILABLE is not a failed contribution check.</p></details>
+<footer><div class="footer-grid"><div><strong>Source</strong><a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">github.com/mnsis/technocore-worker</a><span>Build/commit: <code id="served-commit">loading…</code></span></div><div><strong>Worker DID</strong><code>did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM</code></div></div><div class="credits"><span>Built by <a href="https://x.com/amjawaeth" rel="external noreferrer">@amjawaeth</a></span><span>FLOP Labs: <a href="https://x.com/flop_labs" rel="external noreferrer">@flop_labs</a></span></div><p>Independent community project. Not affiliated with or endorsed by FLOP Labs.</p></footer>
+</main></body></html>
