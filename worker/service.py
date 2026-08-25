@@ -20,7 +20,7 @@ from worker.protocol import (
     canonical_response,
     parse_request,
 )
-from worker.state import State
+from worker.state import PendingJob, State
 from worker.transport import Posted, Technocore
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,10 @@ class Worker:
         request_hash = hashlib.sha256(wire_text.encode()).hexdigest()
         existing = self.state.existing_claim(requester, request.job_id, request_hash)
         if existing is not None:
-            return Outcome("job-conflict" if existing.conflict else "duplicate")
+            if existing.conflict:
+                return Outcome("job-conflict")
+            pending = self.state.pending_claim(requester, request.job_id, request_hash)
+            return self._deliver(pending) if pending is not None else Outcome("duplicate")
         repository: str | None = None
         claimed_commit: str | None = None
         resolved_commit: str | None = None
@@ -114,31 +117,39 @@ class Worker:
         )
         if not claim.inserted:
             return Outcome("job-conflict" if claim.conflict else "duplicate")
-        if isinstance(request, ContributionRequest):
-            if checks is None:
+        pending = self.state.pending_claim(requester, request.job_id, request_hash)
+        if pending is None:  # pragma: no cover - the inserted row must be readable
+            raise RuntimeError("newly claimed job is missing")
+        return self._deliver(pending)
+
+    def _deliver(self, pending: PendingJob) -> Outcome:
+        if pending.capability == "contribution-verify":
+            if pending.checks is None:
                 raise RuntimeError("contribution checks were not produced")
             response_text = canonical_contribution_response(
                 worker_did=self.did,
-                requester_did=requester,
-                job_id=request.job_id,
+                requester_did=pending.requester_did,
+                job_id=pending.job_id,
                 request_room=self.inbox,
-                request_sequence=sequence,
-                request_hash=request_hash,
-                checks=checks,
+                request_sequence=pending.request_sequence,
+                request_hash=pending.request_hash,
+                checks=pending.checks,
             )
         else:
             response_text = canonical_response(
                 worker_did=self.did,
-                requester_did=requester,
-                job_id=request.job_id,
+                requester_did=pending.requester_did,
+                job_id=pending.job_id,
                 request_room=self.inbox,
-                request_sequence=sequence,
-                request_hash=request_hash,
-                result=result,
+                request_sequence=pending.request_sequence,
+                request_hash=pending.request_hash,
+                result=pending.result,
             )
-        outbound_nonce = self.state.next_nonce(request.reply_room, time.time_ns())
-        posted = self.transport.post_signed(request.reply_room, response_text, self.key, outbound_nonce)
-        self.state.complete(requester, request.job_id, posted.sequence)
+        outbound_nonce = self.state.next_nonce(pending.response_room, time.time_ns())
+        posted = self.transport.post_signed(
+            pending.response_room, response_text, self.key, outbound_nonce
+        )
+        self.state.complete(pending.requester_did, pending.job_id, posted.sequence)
         return Outcome("completed", posted)
 
 

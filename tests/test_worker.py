@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from worker.identity import public_did
@@ -24,6 +26,16 @@ class FakeSender:
     ) -> Posted:
         self.posts.append((room, text, nonce))
         return Posted(room=room, sequence=900 + len(self.posts), timestamp="2026-01-01T00:00:00Z")
+
+
+class FailOnceSender(FakeSender):
+    def post_signed(
+        self, room: str, text: str, key: Ed25519PrivateKey, nonce: int
+    ) -> Posted:
+        self.posts.append((room, text, nonce))
+        if len(self.posts) == 1:
+            raise RuntimeError("simulated reply rejection")
+        return Posted(room=room, sequence=902, timestamp="2026-01-01T00:00:00Z")
 
 
 def build_worker(tmp_path: Path) -> tuple[Worker, FakeSender, State]:
@@ -77,6 +89,26 @@ def test_duplicate_and_replay_are_idempotent(tmp_path: Path) -> None:
     replay = dict(record, seq=2)
     assert worker.handle(replay).status == "duplicate"
     assert len(sender.posts) == 1
+
+
+def test_failed_reply_is_retried_without_reprocessing_request(tmp_path: Path) -> None:
+    state = State(tmp_path / "jobs.sqlite3")
+    sender = FailOnceSender()
+    worker = Worker(
+        inbox=INBOX,
+        key=Ed25519PrivateKey.generate(),
+        state=state,
+        transport=sender,
+    )
+    requester = Ed25519PrivateKey.generate()
+    record = signed_record(requester)
+    with pytest.raises(RuntimeError, match="reply rejection"):
+        worker.handle(record)
+    request_hash = hashlib.sha256(str(record["text"]).encode()).hexdigest()
+    assert state.pending_claim(public_did(requester), "job-1", request_hash) is not None
+    assert worker.handle(record).status == "completed"
+    assert len(sender.posts) == 2
+    assert sender.posts[0][1] == sender.posts[1][1]
 
 
 def test_changed_replay_is_conflict(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -48,6 +49,18 @@ JOB_COLUMNS = {
 class JobClaim:
     inserted: bool
     conflict: bool
+
+
+@dataclass(frozen=True)
+class PendingJob:
+    job_id: str
+    requester_did: str
+    request_sequence: int
+    request_hash: str
+    capability: str
+    result: dict[str, Any]
+    response_room: str
+    checks: dict[str, object] | None
 
 
 class State:
@@ -104,6 +117,30 @@ class State:
         if row is None:
             return None
         return JobClaim(inserted=False, conflict=str(row[0]) != request_hash)
+
+    def pending_claim(
+        self, requester_did: str, job_id: str, request_hash: str
+    ) -> PendingJob | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT job_id, requester_did, request_sequence, request_hash,
+                capability, result_json, response_room, checks_json
+                FROM jobs WHERE requester_did = ? AND job_id = ?
+                AND request_hash = ? AND status = 'processed'""",
+                (requester_did, job_id, request_hash),
+            ).fetchone()
+        if row is None:
+            return None
+        return PendingJob(
+            job_id=str(row[0]),
+            requester_did=str(row[1]),
+            request_sequence=int(row[2]),
+            request_hash=str(row[3]),
+            capability=str(row[4]),
+            result=json.loads(str(row[5])),
+            response_room=str(row[6]),
+            checks=json.loads(str(row[7])) if row[7] is not None else None,
+        )
 
     def claim(
         self,

@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
+from urllib.error import HTTPError
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -66,7 +67,15 @@ class Technocore:
                 "User-Agent": "technocore-worker/0.1",
             },
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:
-            payload = json.load(response)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                payload = json.load(response)
+        except HTTPError as error:
+            detail = error.read(1024).decode("utf-8", "replace").replace(
+                room, "<redacted-room>"
+            )
+            raise RuntimeError(
+                f"Technocore reply HTTP {error.code}: {detail.strip()}"
+            ) from error
         posted = payload["posted"]
         return Posted(room=room, sequence=int(posted["seq"]), timestamp=str(posted["ts"]))

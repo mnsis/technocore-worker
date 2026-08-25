@@ -196,6 +196,16 @@ class FakeSender:
         return Posted(room, 901, "2026-01-01T00:00:00Z")
 
 
+class FailOnceSender(FakeSender):
+    def post_signed(
+        self, room: str, text: str, key: Ed25519PrivateKey, nonce: int
+    ) -> Posted:
+        self.posts.append((room, text, nonce))
+        if len(self.posts) == 1:
+            raise RuntimeError("simulated reply rejection")
+        return Posted(room, 902, "2026-01-01T00:00:00Z")
+
+
 class FakeVerifier:
     def __init__(self) -> None:
         self.calls = 0
@@ -271,6 +281,27 @@ def test_duplicate_conflict_and_did_isolation_avoid_reexecution(tmp_path: Path) 
     assert worker.handle(contribution_record(second, sequence=3)).status == "completed"
     assert verifier.calls == 2
     assert len(sender.posts) == 2
+
+
+def test_failed_contribution_reply_retries_persisted_result_without_github(
+    tmp_path: Path,
+) -> None:
+    sender, verifier, state = FailOnceSender(), FakeVerifier(), State(tmp_path / "jobs.sqlite3")
+    worker = Worker(
+        inbox=INBOX,
+        key=Ed25519PrivateKey.generate(),
+        state=state,
+        transport=sender,
+        verifier=verifier,
+    )
+    requester = Ed25519PrivateKey.generate()
+    record = contribution_record(requester)
+    with pytest.raises(RuntimeError, match="reply rejection"):
+        worker.handle(record)
+    assert verifier.calls == 1
+    assert worker.handle(record).status == "completed"
+    assert verifier.calls == 1
+    assert sender.posts[0][1] == sender.posts[1][1]
 
 
 def test_database_has_only_bounded_provenance_not_fetched_content(tmp_path: Path) -> None:
