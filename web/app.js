@@ -89,7 +89,7 @@ function setResultValue(id, value) { const target = byId(id); target.textContent
 function showResult(result, elapsed, requestContext) {
   stopElapsed();
   const values = { repository: result.checks?.repository?.status || "UNAVAILABLE", commit: result.checks?.commit?.status || "UNAVAILABLE", file: filePresentation(result, requestContext.path) };
-  const duration = `${(elapsed / 1000).toFixed(1)}s`; const safe = values.repository === "CONFIRMED" && values.commit === "CONFIRMED";
+  const duration = `${(elapsed / 1000).toFixed(1)}s`; const safe = values.repository === "CONFIRMED" && values.commit === "CONFIRMED" && ["CONFIRMED", "NOT REQUESTED"].includes(values.file);
   currentReceipt = { repository: requestContext.repository, commit: requestContext.commit, path: requestContext.path, repositoryStatus: values.repository, commitStatus: values.commit, fileStatus: values.file, requesterDid: result.request.did, workerDid: result.worker, requestSequence: result.request.seq, requestDigest: result.request.sha256, protocol: result.v, receiptId: receiptId(result.request.sha256), duration };
   byId("shareable-receipt").hidden = !safe; byId("neutral-result").hidden = safe;
   if (safe) {

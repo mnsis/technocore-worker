@@ -97,8 +97,9 @@ test("requested file preserves absent and unavailable semantics", async ({ page,
   page.on("dialog", (dialog) => dialog.accept());
   for (const expected of ["FAILED", "NOT_FOUND", "UNAVAILABLE"]) {
     await page.locator("#example").click(); await page.locator("#path").fill("missing.txt"); await page.locator("#send").click();
-    if (expected === "FAILED") { await expect(page.locator("#shareable-receipt")).toBeHidden(); await expect(page.locator("#neutral-result")).toBeVisible(); await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND"); }
-    else { await expect(page.locator("#shareable-receipt")).toBeVisible(); await expect(page.locator("#result-file")).toHaveText(expected); if (expected === "UNAVAILABLE") await expect(page.locator("#result-file")).toHaveClass("secondary"); else await expect(page.locator("#result-file")).not.toHaveClass("secondary"); }
+    await expect(page.locator("#shareable-receipt")).toBeHidden(); await expect(page.locator("#neutral-result")).toBeVisible();
+    if (expected === "FAILED") await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND");
+    else { await expect(page.locator("#neutral-file")).toHaveText(expected); if (expected === "UNAVAILABLE") await expect(page.locator("#neutral-file")).toHaveClass("secondary"); else await expect(page.locator("#neutral-file")).not.toHaveClass("secondary"); }
     if (expected !== "UNAVAILABLE") await page.locator("#check-another").click();
   }
 });
