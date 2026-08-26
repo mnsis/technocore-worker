@@ -2,9 +2,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --check web/crypto.js && node --check web/protocol.js && node --check web/app.js && playwright test"
+    "build:wallet": "esbuild web/wallet-source.js --bundle --format=esm --platform=browser --target=es2020 --outfile=web/wallet.js",
+    "test": "node --check web/crypto.js && node --check web/protocol.js && node --check web/wallet-source.js && node --check web/app.js && playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0"
+    "@playwright/test": "^1.60.0",
+    "esbuild": "0.28.2"
+  },
+  "dependencies": {
+    "ethereum-cryptography": "3.2.0"
   }
 }

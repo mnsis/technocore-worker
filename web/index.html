@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="result.css">
   <link rel="stylesheet" href="receipt.css">
+  <link rel="stylesheet" href="wallet.css">
   <link rel="stylesheet" href="state.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -101,9 +102,25 @@
           <canvas id="receipt-canvas" width="1200" height="675" hidden aria-label="Generated receipt image"></canvas>
         </div>
       </section>
+
+      <section id="wallet-section" class="wallet-utility" aria-labelledby="wallet-title">
+        <div class="wallet-heading"><div><p class="kicker">Optional</p><h2 id="wallet-title">EVM wallet</h2><p>Create a standard EVM wallet locally in this browser.</p></div><p class="wallet-separate">Separate from your Technocore DID.</p></div>
+        <div id="wallet-empty" class="wallet-empty"><button id="wallet-create" class="wallet-button" type="button">Create wallet</button></div>
+        <div id="wallet-ready" class="wallet-ready" hidden>
+          <div class="wallet-address-row"><div><span class="wallet-label">EVM address</span><code id="wallet-address" class="wallet-address"></code></div><button id="wallet-copy-address" class="wallet-button" type="button">Copy address</button></div>
+          <div class="wallet-recovery"><div class="wallet-recovery-head"><div><span class="wallet-label">Recovery phrase</span><span id="wallet-saved-state" class="wallet-saved-state" hidden>✓ Marked as saved</span><span id="wallet-visibility" class="wallet-hidden">Hidden</span></div><button id="wallet-reveal" class="quiet" type="button">Reveal recovery phrase</button></div>
+            <div id="wallet-reveal-confirm" hidden><p class="wallet-warning">Anyone with these 12 words can control this wallet.</p><label class="wallet-ack"><input id="wallet-acknowledge" type="checkbox"> I understand that revealing or copying these words can expose the wallet.</label><div class="wallet-confirm-actions"><button id="wallet-confirm-reveal" class="wallet-button" type="button" disabled>Reveal 12 words</button></div></div>
+            <div id="wallet-phrase" hidden><ol id="wallet-phrase-list" class="wallet-words"></ol><p class="wallet-save-note">This site does not save your recovery phrase. If you lose these words, this wallet cannot be recovered here.</p><div class="wallet-phrase-actions"><button id="wallet-copy-phrase" class="wallet-button" type="button">Copy recovery phrase</button><button id="wallet-saved" class="quiet" type="button">I've saved my recovery phrase</button></div></div>
+          </div>
+          <div class="wallet-footer"><button id="wallet-create-another" class="quiet" type="button">Create another wallet</button><p id="wallet-feedback" class="wallet-feedback" role="status" aria-live="polite"></p></div>
+        </div>
+        <p id="wallet-status" class="wallet-status" role="status" aria-live="polite"></p>
+        <details class="wallet-risks"><summary>Browser wallet risks</summary><p>Served JavaScript, browser extensions, and clipboard tools can access information you reveal. Wallet data remains in browser memory until this page is closed or reloaded, and JavaScript cannot guarantee complete memory erasure.</p></details>
+      </section>
     </main>
 
     <footer><span>Source <a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">GitHub</a> · <code id="served-commit">loading…</code></span><span>Worker <code>did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM</code></span><span>Built by <a href="https://x.com/amjawaeth" rel="external noreferrer">@amjawaeth</a> · FLOP Labs <a href="https://x.com/flop_labs" rel="external noreferrer">@flop_labs</a></span><small>Independent community project. Not affiliated with or endorsed by FLOP Labs.</small></footer>
   </div>
+  <script type="module" src="wallet-ui.js"></script>
 </body>
 </html>
