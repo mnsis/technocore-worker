@@ -1,6 +1,6 @@
 import { didFromPrivateKey, exportEncryptedPem, generateIdentity, importEncryptedPem, sign } from "./crypto.js";
 import { WORKER_DID, WORKER_INBOX, canonicalContributionRequest, freshJobId, freshNonce, parseWorkerReply, signedWrite } from "./protocol.js";
-import { abbreviate, copyReceiptText, drawReceipt, filePresentation, receiptId, xShareText } from "./receipt.js";
+import { copyReceiptText, drawReceipt, filePresentation, receiptId, xShareText } from "./receipt.js";
 
 let privateKey = null; let did = null; let downloaded = false; let controlProved = false; let pollAbort = null; let pemBlobUrl = null; let elapsedTimer = null; let currentReceipt = null; let feedbackTimer = null;
 const byId = (id) => document.getElementById(id);
@@ -68,8 +68,8 @@ byId("import").addEventListener("click", async () => {
 });
 
 function resetGithub() {
-  pollAbort?.abort(); stopElapsed(); currentReceipt = null; clearTimeout(feedbackTimer); byId("share-feedback").textContent = ""; byId("copy-receipt").textContent = "Copy receipt"; byId("include-did-image").checked = true; byId("provenance").open = false; document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("download").textContent = "Download identity.pem"; byId("result-stage").hidden = true; byId("checking").hidden = true; byId("github-stage").hidden = false; byId("github-form-wrap").hidden = false; byId("repository").value = ""; byId("commit").value = ""; byId("path").value = ""; touchedFields.clear();
-  for (const item of byId("execution").children) item.className = ""; validateContribution(); setProgress("github", ["identity", "control"]); status("Ready for another check", "ok");
+  pollAbort?.abort(); stopElapsed(); currentReceipt = null; clearTimeout(feedbackTimer); byId("share-feedback").textContent = ""; byId("copy-receipt").textContent = "Copy"; byId("include-did-image").checked = true; byId("provenance").open = false; document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("download").textContent = "Download identity.pem"; byId("result-stage").hidden = true; byId("checking").hidden = true; byId("github-stage").hidden = false; byId("github-form-wrap").hidden = false; byId("repository").value = ""; byId("commit").value = ""; byId("path").value = ""; touchedFields.clear();
+  byId("identity-stage").hidden = false; byId("control-stage").hidden = false; for (const item of byId("execution").children) item.className = ""; validateContribution(); setProgress("github", ["identity", "control"]); status("Ready for another check", "ok");
 }
 byId("use-another").addEventListener("click", () => {
   privateKey = null; did = null; downloaded = false; controlProved = false; pollAbort?.abort(); revokePemBlobUrl(); byId("identity-ready").hidden = true; byId("identity-setup").hidden = false; byId("control-stage").hidden = true; byId("github-stage").hidden = true; byId("result-stage").hidden = true; byId("pem-file").value = ""; resetGithub(); byId("github-stage").hidden = true; setProgress("identity"); status("Create or import an identity to begin.");
@@ -94,23 +94,22 @@ function showResult(result, elapsed, requestContext) {
   byId("shareable-receipt").hidden = !safe; byId("neutral-result").hidden = safe;
   if (safe) {
     setResultValue("result-repository", values.repository); setResultValue("result-commit", values.commit); setResultValue("result-file", values.file);
-    byId("receipt-id").textContent = `Receipt ${currentReceipt.receiptId}`; byId("receipt-repository").textContent = currentReceipt.repository; byId("receipt-commit").textContent = currentReceipt.commit; byId("result-time").textContent = duration;
-    byId("result-requester-short").textContent = abbreviate(currentReceipt.requesterDid); byId("result-worker-short").textContent = abbreviate(currentReceipt.workerDid);
+    byId("receipt-id").textContent = currentReceipt.receiptId; byId("receipt-repository").textContent = currentReceipt.repository; byId("receipt-commit").textContent = currentReceipt.commit; byId("result-time").textContent = duration;
     byId("result-requester").textContent = currentReceipt.requesterDid; byId("result-worker").textContent = currentReceipt.workerDid; byId("provenance-commit").textContent = currentReceipt.commit; byId("provenance-sequence").textContent = String(currentReceipt.requestSequence); byId("provenance-digest").textContent = currentReceipt.requestDigest; byId("provenance-version").textContent = currentReceipt.protocol;
   } else {
     setResultValue("neutral-repository", values.repository); setResultValue("neutral-commit", values.commit); setResultValue("neutral-file", values.file); byId("neutral-result-time").textContent = duration;
   }
-  byId("github-stage").hidden = true; byId("result-stage").hidden = false; setProgress("result", ["identity", "control", "github"]); status("Response received", "ok");
+  byId("github-stage").hidden = true; byId("identity-stage").hidden = true; byId("control-stage").hidden = true; byId("result-stage").hidden = false; setProgress("result", ["identity", "control", "github"]); status("Response received", "ok");
 }
 
 async function copyText(value) {
   if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return; }
   const input = document.createElement("textarea"); input.value = value; input.setAttribute("readonly", ""); input.className = "sr-only"; document.body.append(input); input.select(); const copied = document.execCommand("copy"); input.remove(); if (!copied) throw new Error("Copy is not available in this browser.");
 }
-function copiedFeedback(button, label = "Copied ✓") { clearTimeout(feedbackTimer); button.textContent = label; byId("share-feedback").textContent = "Receipt copied to clipboard."; feedbackTimer = setTimeout(() => { button.textContent = "Copy receipt"; byId("share-feedback").textContent = ""; }, 2200); }
+function copiedFeedback(button, label = "Copied ✓") { clearTimeout(feedbackTimer); button.textContent = label; byId("share-feedback").textContent = "Receipt copied to clipboard."; feedbackTimer = setTimeout(() => { button.textContent = "Copy"; byId("share-feedback").textContent = ""; }, 2200); }
 byId("copy-receipt").addEventListener("click", async () => { if (!currentReceipt) return; try { await copyText(copyReceiptText(currentReceipt)); copiedFeedback(byId("copy-receipt")); } catch (error) { byId("share-feedback").textContent = error.message; } });
 byId("share-x").addEventListener("click", () => { if (!currentReceipt) return; const url = `https://x.com/intent/post?text=${encodeURIComponent(xShareText(currentReceipt, location.origin))}`; window.open(url, "_blank", "noopener,noreferrer"); });
-byId("download-receipt").addEventListener("click", () => { if (!currentReceipt) return; const canvas = drawReceipt(byId("receipt-canvas"), currentReceipt, byId("include-did-image").checked); canvas.toBlob((blob) => { if (!blob) { byId("share-feedback").textContent = "Could not generate receipt image."; return; } const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `technocore-check-${currentReceipt.receiptId}.png`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }, "image/png"); });
+byId("download-receipt").addEventListener("click", async () => { if (!currentReceipt) return; const canvas = await drawReceipt(byId("receipt-canvas"), currentReceipt, byId("include-did-image").checked); canvas.toBlob((blob) => { if (!blob) { byId("share-feedback").textContent = "Could not generate receipt image."; return; } const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `technocore-check-${currentReceipt.receiptId}.png`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }, "image/png"); });
 for (const button of document.querySelectorAll(".copy-value")) button.addEventListener("click", async () => { const value = byId(button.dataset.copyTarget).textContent; try { await copyText(value); button.textContent = "Copied ✓"; setTimeout(() => { button.textContent = "Copy"; }, 1800); } catch (error) { byId("share-feedback").textContent = error.message; } });
 byId("contribution").addEventListener("submit", async (event) => {
   event.preventDefault(); try {

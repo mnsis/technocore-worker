@@ -42,30 +42,57 @@ function canvasText(context, text, x, y, style) {
   context.fillText(text, x, y, style.maxWidth);
 }
 
-export function drawReceipt(canvas, data, includeDid = true) {
+const DISPLAY_FONT = 'Arial, "Helvetica Neue", sans-serif';
+const MONO_FONT = '"Courier New", Courier, monospace';
+
+function wrapCanvasText(context, text, maxWidth, maxLines) {
+  const preferred = text.includes("/") ? [`${text.split("/")[0]}/`, text.slice(text.indexOf("/") + 1)] : [text];
+  const lines = [];
+  for (const part of preferred) {
+    let remaining = part;
+    while (remaining && lines.length < maxLines) {
+      let end = remaining.length;
+      while (end > 1 && context.measureText(remaining.slice(0, end)).width > maxWidth) end -= 1;
+      if (lines.length === maxLines - 1 && end < remaining.length) { lines.push(`${remaining.slice(0, Math.max(1, end - 1))}…`); return lines; }
+      lines.push(remaining.slice(0, end)); remaining = remaining.slice(end);
+    }
+  }
+  return lines;
+}
+
+export async function drawReceipt(canvas, data, includeDid = true) {
+  if (document.fonts?.ready) await document.fonts.ready;
   canvas.width = 1200; canvas.height = 675;
   const context = canvas.getContext("2d");
-  context.fillStyle = "#080b11"; context.fillRect(0, 0, 1200, 675);
-  context.fillStyle = "#101722"; context.fillRect(55, 45, 1090, 585);
-  context.fillStyle = "#63cce5"; context.fillRect(55, 45, 7, 585);
-  canvasText(context, "TECHNOCORE WORKER", 100, 91, { font: "700 18px system-ui", color: "#63cce5" });
-  canvasText(context, "CHECK RECEIPT", 100, 142, { font: "750 42px system-ui", color: "#eef4fb" });
-  canvasText(context, `RECEIPT ${data.receiptId}`, 1100, 93, { font: "700 17px ui-monospace", color: "#8e9aab", align: "right" });
-  canvasText(context, "REPOSITORY", 100, 204, { font: "700 14px system-ui", color: "#738094" });
-  canvasText(context, data.repository, 100, 239, { font: "650 28px system-ui", color: "#eef4fb", maxWidth: 940 });
-  canvasText(context, "COMMIT", 100, 288, { font: "700 14px system-ui", color: "#738094" });
-  canvasText(context, abbreviate(data.commit, 12, 8), 100, 322, { font: "600 24px ui-monospace", color: "#b9c5d6" });
+  context.fillStyle = "#080c12"; context.fillRect(0, 0, 1200, 675);
+  context.fillStyle = "#0d141d"; context.fillRect(36, 32, 1128, 611);
+  context.fillStyle = "#63cce5"; context.fillRect(74, 64, 44, 3);
+  canvasText(context, "TECHNOCORE WORKER", 74, 98, { font: `700 17px ${DISPLAY_FONT}`, color: "#d7e2ed" });
+  canvasText(context, data.receiptId, 1125, 98, { font: `700 17px ${MONO_FONT}`, color: "#8291a4", align: "right" });
+  context.fillStyle = "#25303d"; context.fillRect(74, 122, 1051, 1);
+  canvasText(context, "GitHub commit checked", 74, 161, { font: `600 18px ${DISPLAY_FONT}`, color: "#8190a3" });
+
+  const repositoryFontSize = data.repository.length > 95 ? 40 : 48;
+  context.font = `700 ${repositoryFontSize}px ${DISPLAY_FONT}`;
+  const repositoryLines = wrapCanvasText(context, data.repository, 930, 3);
+  repositoryLines.forEach((line, index) => canvasText(context, line, 74, 216 + index * 50, { font: `700 ${repositoryFontSize}px ${DISPLAY_FONT}`, color: index === 0 && line.endsWith("/") ? "#63cce5" : "#f0f5fa" }));
+  const repositoryBottom = 216 + (repositoryLines.length - 1) * 50;
+  canvasText(context, abbreviate(data.commit, 12, 8), 74, repositoryBottom + 42, { font: `600 20px ${MONO_FONT}`, color: "#9eacbd" });
+
   const rows = [["REPOSITORY", data.repositoryStatus], ["COMMIT", data.commitStatus], ["FILE", data.fileStatus]];
+  const statusY = Math.max(390, repositoryBottom + 95);
   rows.forEach(([label, value], index) => {
-    const y = 385 + index * 48;
-    canvasText(context, label, 100, y, { font: "700 15px system-ui", color: "#8794a7" });
+    const x = 74 + index * 250; const y = statusY;
     const color = value === "CONFIRMED" ? "#62d39f" : value === "UNAVAILABLE" ? "#e2b15d" : "#a9b4c3";
-    canvasText(context, value, 550, y, { font: "750 16px ui-monospace", color });
+    canvasText(context, value === "CONFIRMED" ? "✓" : "—", x, y, { font: `700 18px ${DISPLAY_FONT}`, color });
+    canvasText(context, label, x + 26, y, { font: `700 13px ${DISPLAY_FONT}`, color: "#8290a2" });
+    canvasText(context, value, x + 26, y + 25, { font: `700 15px ${MONO_FONT}`, color });
   });
-  canvasText(context, "Checked through Technocore", 100, 555, { font: "650 18px system-ui", color: "#dce5f0" });
-  canvasText(context, `Worker  ${abbreviate(data.workerDid)}`, 100, 588, { font: "500 14px ui-monospace", color: "#8e9aab" });
-  if (includeDid) canvasText(context, `Requester  ${abbreviate(data.requesterDid)}`, 1100, 555, { font: "500 14px ui-monospace", color: "#8e9aab", align: "right" });
-  else canvasText(context, "Requester DID hidden", 1100, 555, { font: "500 14px system-ui", color: "#8e9aab", align: "right" });
-  canvasText(context, "Independent community project · Not affiliated with or endorsed by FLOP Labs", 1100, 588, { font: "500 12px system-ui", color: "#626f80", align: "right" });
+  canvasText(context, `Checked through Technocore · ${data.duration}`, 74, 534, { font: `600 17px ${DISPLAY_FONT}`, color: "#d4dde8" });
+  if (includeDid) canvasText(context, `Requester  ${abbreviate(data.requesterDid)}`, 74, 568, { font: `500 13px ${MONO_FONT}`, color: "#748296" });
+  else canvasText(context, "Requester DID hidden", 74, 568, { font: `500 13px ${DISPLAY_FONT}`, color: "#748296" });
+  canvasText(context, `Worker ${abbreviate(data.workerDid, 10, 6)}`, 1125, 534, { font: `500 12px ${MONO_FONT}`, color: "#657387", align: "right" });
+  context.fillStyle = "#25303d"; context.fillRect(74, 596, 1051, 1);
+  canvasText(context, "Independent community tool · Not affiliated with FLOP Labs", 74, 622, { font: `500 12px ${DISPLAY_FONT}`, color: "#5f6d80" });
   return canvas;
 }
