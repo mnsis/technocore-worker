@@ -1,5 +1,5 @@
 import { didFromPrivateKey, exportEncryptedPem, generateIdentity, importEncryptedPem, sign } from "./crypto.js";
-import { WORKER_DID, WORKER_INBOX, canonicalContributionRequest, freshJobId, freshNonce, freshReplyMailbox, parseWorkerReply, signedWrite } from "./protocol.js";
+import { WORKER_DID, WORKER_INBOX, canonicalContributionRequest, freshJobId, freshNonce, parseWorkerReply, signedWrite } from "./protocol.js";
 
 let privateKey = null; let did = null; let downloaded = false; let controlProved = false; let pollAbort = null; let pemBlobUrl = null; let elapsedTimer = null;
 const byId = (id) => document.getElementById(id);
@@ -77,9 +77,9 @@ byId("example").addEventListener("click", () => { byId("repository").value = "pa
 
 async function sha256(text) { const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))); return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function execution(step) { const order = ["signed", "sent", "waiting"]; const current = order.indexOf(step); for (const item of byId("execution").children) { const index = order.indexOf(item.dataset.step); item.className = index < current ? "done" : index === current ? "active" : ""; } }
-async function pollReply(reply, expected) {
-  pollAbort = new AbortController(); let cursor = 0;
-  for (let attempt = 0; attempt < 36; attempt += 1) { const url = `/api/technocore/reply?room=${encodeURIComponent(reply)}&since=${cursor}&n=${attempt}`; const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store", signal: pollAbort.signal }); if (!response.ok) throw new Error("Could not read the reply mailbox."); const room = await response.json(); if (room.room !== reply || !Array.isArray(room.messages)) throw new Error("Malformed reply mailbox response."); for (const record of room.messages) { const parsed = parseWorkerReply(record, expected); if (parsed) return parsed; } if (Number.isInteger(room.last_seq)) cursor = Math.max(cursor, room.last_seq); }
+async function pollReply(expected) {
+  pollAbort = new AbortController();
+  for (let attempt = 0; attempt < 36; attempt += 1) { const url = `/api/jobs/${encodeURIComponent(expected.job)}?did=${encodeURIComponent(expected.did)}&sha256=${expected.sha256}&n=${attempt}`; const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store", signal: pollAbort.signal }); if (response.status === 503) throw new Error("Worker reply service is temporarily unavailable."); if (!response.ok) throw new Error("Could not read the worker result."); const body = await response.json(); const parsed = parseWorkerReply(body, expected); if (parsed) return parsed; }
   throw new Error("Timed out waiting for the worker response.");
 }
 function resultState(value) { return value === "CONFIRMED" ? "confirmed" : value === "NOT_CHECKED" || value === "UNAVAILABLE" ? "secondary" : ""; }
@@ -95,9 +95,10 @@ byId("contribution").addEventListener("submit", async (event) => {
     if (!validateContribution(true)) return; const repository = byId("repository").value.trim(); const commit = byId("commit").value.trim(); const path = byId("path").value.trim();
     if (!downloaded && !confirm("You have not downloaded identity.pem. Continue without a recoverable encrypted copy?")) return;
     byId("github-form-wrap").hidden = true; byId("checking").hidden = false; byId("checking-repository").textContent = repository; byId("checking-commit").textContent = commit; const started = performance.now(); document.body.classList.add("job-active"); document.querySelector(".workspace").classList.add("job-active"); byId("download").textContent = "Download backup"; setProgress("result", ["identity", "control", "github"]); startElapsed(started); status("Preparing signed request");
-    const job = freshJobId(); const reply = freshReplyMailbox(); const nonce = freshNonce(); const text = canonicalContributionRequest({ job, reply, repository, commit, path: path || undefined }); const body = await signedWrite(privateKey, did, WORKER_INBOX, nonce, text); execution("sent");
+    const baselineResponse = await fetch("/api/reply-baseline", { headers: { Accept: "application/json" }, cache: "no-store" }); if (!baselineResponse.ok) throw new Error("Worker reply service is temporarily unavailable."); const baseline = await baselineResponse.json(); const replyAfter = baseline.reply_after;
+    const job = freshJobId(); const nonce = freshNonce(); const text = canonicalContributionRequest({ job, repository, commit, path: path || undefined, replyAfter }); const body = await signedWrite(privateKey, did, WORKER_INBOX, nonce, text); execution("sent");
     const response = await fetch("/api/technocore/request", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error("Technocore rejected the signed request."); const posted = await response.json(); if (!Number.isInteger(posted.posted?.seq) || posted.posted?.from !== did || posted.posted?.text !== text) throw new Error("Technocore returned a mismatched write receipt."); execution("waiting"); status("Waiting for worker");
-    const result = await pollReply(reply, { job, did, sha256: await sha256(text) }); if (result.worker !== WORKER_DID || result.request.did !== did) throw new Error("Worker response identity mismatch."); for (const item of byId("execution").children) item.className = "done"; byId("execution").querySelector('[data-step="waiting"] span:nth-of-type(2)').textContent = "Worker replied"; showResult(result, performance.now() - started);
+    const result = await pollReply({ job, did, sha256: await sha256(text), sequence: posted.posted.seq, replyAfter }); if (result.worker !== WORKER_DID || result.request.did !== did) throw new Error("Worker response identity mismatch."); for (const item of byId("execution").children) item.className = "done"; byId("execution").querySelector('[data-step="waiting"] span:nth-of-type(2)').textContent = "Worker replied"; showResult(result, performance.now() - started);
   } catch (error) { stopElapsed(); document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("checking").hidden = true; byId("github-form-wrap").hidden = false; setProgress("github", ["identity", "control"]); status(error.name === "AbortError" ? "Polling stopped." : error.message, "error"); }
   finally { validateContribution(); pollAbort = null; }
 });

@@ -26,7 +26,6 @@ function randomToken(length) {
   return Array.from(bytes, (byte) => "abcdefghijklmnopqrstuvwxyz0123456789"[byte % 36]).join("");
 }
 
-export function freshReplyMailbox() { return `mb-p-${randomToken(24)}`; }
 export function freshJobId() { return `browser-${randomToken(20)}`; }
 export function freshNonce() {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
@@ -35,13 +34,13 @@ export function freshNonce() {
   return String(value % 10000000000000000000n);
 }
 
-export function canonicalContributionRequest({ job, reply, repository, commit, path }) {
+export function canonicalContributionRequest({ job, repository, commit, path, replyAfter }) {
   if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(job)) throw new Error("Invalid job ID.");
-  if (!/^mb-p-[a-z0-9][a-z0-9_-]{15,42}$/.test(reply)) throw new Error("Invalid reply mailbox.");
+  if (!Number.isSafeInteger(replyAfter) || replyAfter < 0) throw new Error("Invalid reply baseline.");
   if (!REPOSITORY.test(repository) || repository.endsWith(".") || repository.split("/")[1].includes("..")) throw new Error("Use owner/repository, not a URL.");
   if (!SHA.test(commit)) throw new Error("Commit must be a full 40-character SHA.");
   if (path && (!PATH.test(path) || path.length > 240 || path.split("/").some((part) => part === "." || part === ".."))) throw new Error("Invalid repository path.");
-  const value = { capability: "contribution-verify", commit: commit.toLowerCase(), job, reply, repository, v: "tc-worker/v1" };
+  const value = { capability: "contribution-verify", commit: commit.toLowerCase(), job, reply_after: replyAfter, repository, v: "tc-worker/v2" };
   if (path) value.path = path;
   return JSON.stringify(value, Object.keys(value).sort());
 }
@@ -52,12 +51,12 @@ export async function signedWrite(privateKey, did, room, nonce, text) {
 }
 
 export function parseWorkerReply(record, expected) {
-  if (!record || record.from !== WORKER_DID || typeof record.text !== "string") return null;
-  let response;
-  try { response = JSON.parse(record.text); } catch { return null; }
-  if (response.v !== "tc-worker/v1" || response.capability !== "contribution-verify" ||
+  const response = record?.result ?? record;
+  if (!response || typeof response !== "object") return null;
+  if (response.v !== "tc-worker/v2" || response.capability !== "contribution-verify" ||
       response.status !== "completed" || response.worker !== WORKER_DID || response.job !== expected.job ||
       response.request?.did !== expected.did || response.request?.room !== WORKER_INBOX ||
+      response.request?.seq !== expected.sequence || response.request?.reply_after !== expected.replyAfter ||
       response.request?.sha256 !== expected.sha256) return null;
   return response;
 }

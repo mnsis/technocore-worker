@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS outbound_nonces (
     room TEXT PRIMARY KEY,
     nonce INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS service_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 JOB_COLUMNS = {
@@ -42,6 +46,9 @@ JOB_COLUMNS = {
     "checks_json": "TEXT",
     "verified_at": "TEXT",
     "requested_file_path": "TEXT",
+    "protocol_version": "TEXT NOT NULL DEFAULT 'tc-worker/v1'",
+    "reply_after": "INTEGER",
+    "last_delivery_error": "TEXT",
 }
 
 
@@ -61,6 +68,8 @@ class PendingJob:
     result: dict[str, Any]
     response_room: str
     checks: dict[str, object] | None
+    version: str
+    reply_after: int | None
 
 
 class State:
@@ -124,7 +133,8 @@ class State:
         with self._connect() as connection:
             row = connection.execute(
                 """SELECT job_id, requester_did, request_sequence, request_hash,
-                capability, result_json, response_room, checks_json
+                capability, result_json, response_room, checks_json,
+                protocol_version, reply_after
                 FROM jobs WHERE requester_did = ? AND job_id = ?
                 AND request_hash = ? AND status = 'processed'""",
                 (requester_did, job_id, request_hash),
@@ -140,7 +150,22 @@ class State:
             result=json.loads(str(row[5])),
             response_room=str(row[6]),
             checks=json.loads(str(row[7])) if row[7] is not None else None,
+            version=str(row[8]),
+            reply_after=int(row[9]) if row[9] is not None else None,
         )
+
+    def pending_jobs(self, *, limit: int = 100) -> list[PendingJob]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT requester_did, job_id, request_hash FROM jobs
+                WHERE status = 'processed' ORDER BY id LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [
+            pending
+            for requester, job, digest in rows
+            if (pending := self.pending_claim(str(requester), str(job), str(digest))) is not None
+        ]
 
     def claim(
         self,
@@ -158,6 +183,8 @@ class State:
         resolved_commit_sha: str | None = None,
         checks: dict[str, object] | None = None,
         requested_file_path: str | None = None,
+        protocol_version: str = "tc-worker/v1",
+        reply_after: int | None = None,
     ) -> JobClaim:
         now = datetime.now(UTC).isoformat()
         with self._connect() as connection:
@@ -167,8 +194,9 @@ class State:
                         job_id, requester_did, request_room, request_sequence,
                         received_at, capability, status, request_hash, result_json,
                         response_room, repository, claimed_commit_sha,
-                        resolved_commit_sha, checks_json, verified_at, requested_file_path
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'processed', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        resolved_commit_sha, checks_json, verified_at, requested_file_path,
+                        protocol_version, reply_after
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'processed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         job_id,
                         requester_did,
@@ -187,6 +215,8 @@ class State:
                         else None,
                         now if checks is not None else None,
                         requested_file_path,
+                        protocol_version,
+                        reply_after,
                     ),
                 )
                 return JobClaim(inserted=True, conflict=False)
@@ -203,4 +233,26 @@ class State:
                 """UPDATE jobs SET status = 'completed', response_sequence = ?, completed_at = ?
                 WHERE requester_did = ? AND job_id = ?""",
                 (response_sequence, datetime.now(UTC).isoformat(), requester_did, job_id),
+            )
+
+    def delivery_failed(self, requester_did: str, job_id: str, reason: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "UPDATE jobs SET last_delivery_error = ? WHERE requester_did = ? AND job_id = ?",
+                (reason[:512], requester_did, job_id),
+            )
+
+    def shared_activity(self) -> float | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM service_meta WHERE key = 'shared_reply_activity'"
+            ).fetchone()
+        return float(row[0]) if row else None
+
+    def set_shared_activity(self, timestamp: float) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """INSERT INTO service_meta(key, value) VALUES ('shared_reply_activity', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+                (str(timestamp),),
             )

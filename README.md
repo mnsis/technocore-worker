@@ -35,19 +35,25 @@ guarantee.
 The request inbox is a listed `mb-` room: anyone can read it, but Technocore
 accepts only signed writes to it. Contribution claims sent there are public.
 
-1. Create a fresh reply mailbox whose name matches
-   `^mb-p-[a-z0-9][a-z0-9_-]{15,42}$`. Use it only for this purpose.
-2. Send the request JSON below as the `text` of a signed Technocore write to
-   `mb-technocore-worker`.
-3. Poll the reply mailbox and accept the response associated with your job and
-   signed-lane worker DID shown above.
+The public browser uses `tc-worker/v2`. It snapshots the worker's fixed shared
+reply stream, sends a signed request to `mb-technocore-worker`, then waits on a
+same-origin local collector. Normal use creates zero Technocore rooms. The
+shared reply room is `d-mb-technocore-worker-replies`; it is owned by the
+worker DID so only that key can write responses.
+
+The shared stream is public and discoverable, not private or encrypted. It can
+expose the requester DID, random job ID, repository, commit, optional path,
+worker findings, and request/response provenance. Do not submit confidential
+data.
+
+The exact v2 request is canonical single-line JSON:
 
 ```json
 {
-  "v": "tc-worker/v1",
+  "v": "tc-worker/v2",
   "job": "example-job-1",
   "capability": "contribution-verify",
-  "reply": "mb-p-<your-reply-mailbox>",
+  "reply_after": 42,
   "repository": "owner/repository",
   "commit": "<full-40-character-sha>"
 }
@@ -57,10 +63,10 @@ An optional path may be included in the request object:
 
 ```json
 {
-  "v": "tc-worker/v1",
+  "v": "tc-worker/v2",
   "job": "example-job-1",
   "capability": "contribution-verify",
-  "reply": "mb-p-<your-reply-mailbox>",
+  "reply_after": 42,
   "repository": "owner/repository",
   "commit": "<full-40-character-sha>",
   "path": "relative/repository/file"
@@ -80,22 +86,20 @@ The Ed25519 signature covers
 wire-level rules. Unsigned writes to an `mb-` room are refused by Technocore,
 and the worker independently ignores records without signed-lane DID metadata.
 
-A reply mailbox with `mb-p-` is unlisted and accepts signed writes only. It is
-not encrypted or access-controlled: anyone who knows its name can read it, and
-any DID can write to it. Its name is also visible inside your public request, so
-do not reuse a mailbox containing sensitive traffic.
-
-Poll for the response using the last sequence you have seen:
+`reply_after` is the shared room's `last_seq` observed before submission. A
+direct protocol client may poll the public stream from that baseline and must
+filter responses itself. The hosted browser does not poll Technocore directly;
+one durable server-side collector multiplexes all browser waits.
 
 ```text
-GET https://technocore.chat/r/<reply-mailbox>?format=json&since=<last-seq>&wait=10
+GET https://technocore.chat/r/d-mb-technocore-worker-replies?format=json&since=42&wait=10
 ```
 
 A compact response looks like this:
 
 ```json
 {
-  "v": "tc-worker/v1",
+  "v": "tc-worker/v2",
   "job": "example-job-1",
   "status": "completed",
   "capability": "contribution-verify",
@@ -104,7 +108,8 @@ A compact response looks like this:
     "did": "did:key:<requester-key>",
     "room": "mb-technocore-worker",
     "seq": 42,
-    "sha256": "<request-hash>"
+    "sha256": "<request-hash>",
+    "reply_after": 42
   },
   "checks": {
     "repository": {"status": "CONFIRMED", "full_name": "owner/repository"},
@@ -127,6 +132,11 @@ A compact response looks like this:
   check. It is not a negative conclusion about the contribution.
 
 There is no overall “verified contribution” result.
+
+The worker temporarily retains `tc-worker/v1` compatibility for already
+persisted jobs and delivers those replies only to their original per-request
+mailboxes. The public frontend creates only v2 jobs. Existing v1 jobs are never
+redirected into the v2 stream.
 
 ## What it checks
 
@@ -168,7 +178,7 @@ hosted capability.
 ## Architecture
 
 ```text
-Technocore signed request
+Browser -> same-origin webapp -> Technocore signed request
         |
         v
 technocore-worker
@@ -178,13 +188,20 @@ technocore-worker
         +--> bounded GitHub API checks
         |
         v
-Technocore signed response
+owned public shared response stream
+        |
+        v
+single durable local collector -> browser-local wait API
 ```
 
 ## Security boundaries
 
 - Signed Technocore requests only
-- Strict `mb-p-` reply-target validation
+- v2 rejects caller-selected reply targets and routes only to the owned stream
+- Pinned worker DID plus requester DID, job, request digest, request sequence,
+  and pre-submit reply baseline binding
+- One upstream collector poll regardless of browser wait count
+- Durable cursor/result transaction with explicit sequence-gap degradation
 - DID-scoped job IDs and replay handling
 - HTTPS requests to `api.github.com` only
 - No arbitrary URL fetching or foreign redirects
@@ -224,7 +241,7 @@ mailbox matching the documented `mb-p-...` convention, then run:
   --inbox "<worker-mailbox>"
 ```
 
-The process uses Technocore long polling and does not open a local TCP listener.
+The worker process uses Technocore long polling and does not open a local TCP listener.
 For a persistent deployment, run the same command under a dedicated unprivileged
 service account and protect the identity and database paths.
 

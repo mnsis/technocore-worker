@@ -32,23 +32,22 @@ const browserSignature = await sign(generated.privateKey, python.payload);
 fs.writeFileSync(path.join(directory, "browser.pem"), browserPem, { mode: 0o600 });
 fs.writeFileSync(path.join(directory, "browser.json"), JSON.stringify({ did: browserDid, signature: browserSignature }));
 
-const reply = "mb-p-0123456789abcdef01234567";
 const job = "browser-test";
 const request = canonicalContributionRequest({
-  job, reply, repository: "paiin-arc/technocore-beginner-guide",
+  job, replyAfter: 12, repository: "paiin-arc/technocore-beginner-guide",
   commit: "93dab08e185121186d009f9b637a37365c294ea1",
 });
-assert.equal(request, '{"capability":"contribution-verify","commit":"93dab08e185121186d009f9b637a37365c294ea1","job":"browser-test","reply":"mb-p-0123456789abcdef01234567","repository":"paiin-arc/technocore-beginner-guide","v":"tc-worker/v1"}');
-assert.throws(() => canonicalContributionRequest({ job, reply, repository: "https://github.com/a/b", commit: "a".repeat(40) }));
+assert.equal(request, '{"capability":"contribution-verify","commit":"93dab08e185121186d009f9b637a37365c294ea1","job":"browser-test","reply_after":12,"repository":"paiin-arc/technocore-beginner-guide","v":"tc-worker/v2"}');
+assert.throws(() => canonicalContributionRequest({ job, replyAfter: 12, repository: "https://github.com/a/b", commit: "a".repeat(40) }));
 const body = await signedWrite(generated.privateKey, browserDid, WORKER_INBOX, "123", request);
 assert.deepEqual(messagePayload(WORKER_INBOX, "123", request).payload, `${WORKER_INBOX}|123|${request}`);
 assert.equal(await verify(browserDid, body.sig, `${WORKER_INBOX}|123|${request}`), true);
 
-const expected = { job, did: browserDid, sha256: "a".repeat(64) };
+const expected = { job, did: browserDid, sha256: "a".repeat(64), sequence: 7, replyAfter: 12 };
 const response = {
-  capability: "contribution-verify", job, status: "completed", v: "tc-worker/v1", worker: WORKER_DID,
-  request: { did: browserDid, room: WORKER_INBOX, sha256: "a".repeat(64) }, checks: {},
+  capability: "contribution-verify", job, status: "completed", v: "tc-worker/v2", worker: WORKER_DID,
+  request: { did: browserDid, room: WORKER_INBOX, seq: 7, sha256: "a".repeat(64), reply_after: 12 }, checks: {},
 };
-assert.deepEqual(parseWorkerReply({ from: WORKER_DID, text: JSON.stringify(response) }, expected), response);
-assert.equal(parseWorkerReply({ from: python.did, text: JSON.stringify(response) }, expected), null);
-assert.equal(parseWorkerReply({ from: WORKER_DID, text: "not-json" }, expected), null);
+assert.deepEqual(parseWorkerReply({ result: response }, expected), response);
+assert.equal(parseWorkerReply({ result: { ...response, worker: python.did } }, expected), null);
+assert.equal(parseWorkerReply({ result: "not-json" }, expected), null);

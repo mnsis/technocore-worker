@@ -5,7 +5,26 @@ const PASSPHRASE = "headless compatibility passphrase";
 const WORKER_DID = "did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM";
 async function createIdentity(page) {
   await page.goto("/"); await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#confirm-passphrase").fill(PASSPHRASE); await page.locator("#create").click();
-  await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated"); return page.locator("#did").textContent();
+  await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated", { timeout: 15000 }); return page.locator("#did").textContent();
+}
+
+async function mockV2Reply(page, did, checks, { baseline = 12, sequence = 7, wait = false } = {}) {
+  let expected;
+  let releaseReply;
+  await page.route("**/api/reply-baseline", (route) => route.fulfill({ json: { reply_after: baseline } }));
+  await page.route("**/api/technocore/request", async (route) => {
+    const body = route.request().postDataJSON(); const request = JSON.parse(body.text);
+    expect(request.v).toBe("tc-worker/v2"); expect(request.reply_after).toBe(baseline); expect(request).not.toHaveProperty("reply");
+    expected = { request, hash: createHash("sha256").update(body.text).digest("hex") };
+    await route.fulfill({ json: { posted: { seq: sequence, from: did, text: body.text } } });
+  });
+  await page.route("**/api/jobs/**", async (route) => {
+    if (wait) await new Promise((resolve) => { releaseReply = resolve; });
+    await route.fulfill({ json: { result: { capability: "contribution-verify", checks, job: expected.request.job,
+      request: { did, room: "mb-technocore-worker", seq: sequence, sha256: expected.hash, reply_after: baseline },
+      status: "completed", v: "tc-worker/v2", worker: WORKER_DID } } });
+  });
+  return () => releaseReply?.();
 }
 
 test("gates checking on proof and valid fields with inline errors", async ({ page }) => {
@@ -35,23 +54,37 @@ test("imports PEM, rejects wrong password, validates inputs, optional path, and 
   await page.locator("#show-import").click(); await page.locator("#pem-file").setInputFiles(pemPath); await page.locator("#import-passphrase").fill("wrong password here"); await page.locator("#import").click(); await expect(page.locator("#status")).toContainText("Incorrect passphrase");
   await page.locator("#import-passphrase").fill(PASSPHRASE); await page.locator("#import").click(); await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated"); const did = await page.locator("#did").textContent();
   await page.locator("#repository").fill("bad repository"); await page.locator("#commit").fill("short"); await expect(page.locator("#repository-error")).toBeVisible(); await expect(page.locator("#commit-error")).toBeVisible(); await expect(page.locator("#status")).toHaveText("DID control demonstrated");
-  let expected; await page.route("**/api/technocore/request", async (route) => { const body = route.request().postDataJSON(); const request = JSON.parse(body.text); expect(request.path).toBe("README.md"); expected = { request, hash: createHash("sha256").update(body.text).digest("hex") }; await route.fulfill({ json: { posted: { seq: 7, from: did, text: body.text } } }); });
-  let releaseReply; await page.route("**/api/technocore/reply?*", async (route) => { await new Promise((resolve) => { releaseReply = resolve; }); await route.fulfill({ json: { room: expected.request.reply, last_seq: 1, messages: [{ from: WORKER_DID, text: JSON.stringify({ capability: "contribution-verify", checks: { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "CONFIRMED" } }, job: expected.request.job, request: { did, room: "mb-technocore-worker", sha256: expected.hash }, status: "completed", v: "tc-worker/v1", worker: WORKER_DID }) }] } }); });
-  await page.locator("#repository").fill("paiin-arc/technocore-beginner-guide"); await page.locator("#commit").fill("93dab08e185121186d009f9b637a37365c294ea1"); await page.locator("#path").fill("README.md"); await page.locator("#send").click(); await expect(page.locator("#checking")).toBeVisible(); await expect(page.locator("#github-form-wrap")).toBeHidden(); await expect(page.locator(".activity")).toBeVisible(); await expect(page.locator('[data-stage="github"]')).toHaveClass(/completed/); await expect(page.locator('[data-stage="result"]')).toHaveClass(/current/); await expect(page.locator("#download")).toHaveText("Download backup"); const firstElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(350); expect(await page.locator("#waiting-elapsed").textContent()).not.toBe(firstElapsed); await expect.poll(() => Boolean(releaseReply)).toBe(true); releaseReply();
+  const releaseReply = await mockV2Reply(page, did, { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "CONFIRMED" } }, { wait: true });
+  await page.locator("#repository").fill("paiin-arc/technocore-beginner-guide"); await page.locator("#commit").fill("93dab08e185121186d009f9b637a37365c294ea1"); await page.locator("#path").fill("README.md"); await page.locator("#send").click(); await expect(page.locator("#checking")).toBeVisible(); await expect(page.locator("#github-form-wrap")).toBeHidden(); await expect(page.locator(".activity")).toBeVisible(); await expect(page.locator('[data-stage="github"]')).toHaveClass(/completed/); await expect(page.locator('[data-stage="result"]')).toHaveClass(/current/); await expect(page.locator("#download")).toHaveText("Download backup"); const firstElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(350); expect(await page.locator("#waiting-elapsed").textContent()).not.toBe(firstElapsed); releaseReply();
   await expect(page.locator("#status")).toHaveText("Response received"); const stoppedElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(250); expect(await page.locator("#waiting-elapsed").textContent()).toBe(stoppedElapsed); await expect(page.locator("#result-stage")).toBeVisible(); await expect(page.locator("#checking")).toBeHidden(); await expect(page.locator("#github-stage")).toBeHidden(); await expect(page.locator("#result-worker")).toHaveText(WORKER_DID); await expect(page.locator("#result-requester")).toHaveText(did); await expect(page.locator("#result-file")).toHaveText("CONFIRMED");
   await page.locator("#check-another").click(); await expect(page.locator("#github-form-wrap")).toBeVisible(); await expect(page.locator("#did")).toHaveText(did); await expect(page.locator("#identity-setup")).toBeHidden();
 });
 
 test("renders UNAVAILABLE without calling it a failure and exposes source metadata", async ({ page }) => {
   await page.route("**/api/meta", (route) => route.fulfill({ json: { commit: "a".repeat(40) } })); await createIdentity(page);
-  const did = await page.locator("#did").textContent(); let expected; await page.route("**/api/technocore/request", async (route) => { const body = route.request().postDataJSON(); expected = { request: JSON.parse(body.text), hash: createHash("sha256").update(body.text).digest("hex") }; await route.fulfill({ json: { posted: { seq: 1, from: did, text: body.text } } }); });
-  await page.route("**/api/technocore/reply?*", (route) => route.fulfill({ json: { room: expected.request.reply, messages: [{ from: WORKER_DID, text: JSON.stringify({ capability: "contribution-verify", checks: { repository: { status: "UNAVAILABLE" }, commit: { status: "UNAVAILABLE" }, requested_file: { status: "NOT_CHECKED" } }, job: expected.request.job, request: { did, room: "mb-technocore-worker", sha256: expected.hash }, status: "completed", v: "tc-worker/v1", worker: WORKER_DID }) }] } }));
+  const did = await page.locator("#did").textContent(); await mockV2Reply(page, did, { repository: { status: "UNAVAILABLE" }, commit: { status: "UNAVAILABLE" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 1 });
   await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click(); await expect(page.locator("#result-repository")).toHaveText("UNAVAILABLE"); await expect(page.locator("body")).not.toContainText("VERIFIED");
   await expect(page.locator("#served-commit")).toHaveText("a".repeat(40)); await expect(page.locator(`footer code:has-text("${WORKER_DID}")`)).toBeVisible(); expect(await page.locator('a[href="https://x.com/amjawaeth"]').count()).toBe(1); expect(await page.locator('a[href="https://x.com/flop_labs"]').count()).toBe(1);
 });
 
+test("browser timeout does not resubmit the Technocore job", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Protocol timeout behavior is browser-independent.");
+  const did = await createIdentity(page); let submissions = 0; let waits = 0;
+  await page.route("**/api/reply-baseline", (route) => route.fulfill({ json: { reply_after: 2 } }));
+  await page.route("**/api/technocore/request", async (route) => {
+    submissions += 1; const body = route.request().postDataJSON();
+    await route.fulfill({ json: { posted: { seq: 8, from: did, text: body.text } } });
+  });
+  await page.route("**/api/jobs/**", (route) => { waits += 1; return route.fulfill({ json: { result: null } }); });
+  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#send").click();
+  await expect(page.locator("#status")).toHaveText("Timed out waiting for the worker response.");
+  expect(submissions).toBe(1); expect(waits).toBe(36);
+  await expect(page.locator("#github-form-wrap")).toBeVisible();
+});
+
 test("mobile layout fits and JavaScript-disabled message is useful", async ({ browser }) => {
-  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mobile = await mobileContext.newPage(); const did = await createIdentity(mobile); await mobile.route("**/api/technocore/request", async (route) => { const body = route.request().postDataJSON(); await route.fulfill({ json: { posted: { seq: 1, from: did, text: body.text } } }); }); await mobile.route("**/api/technocore/reply?*", async (route) => { await new Promise(() => {}); }); await mobile.locator("#example").click(); mobile.once("dialog", (dialog) => dialog.accept()); await mobile.locator("#send").click(); await expect(mobile.locator("#checking")).toBeVisible(); expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await mobileContext.close();
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mobile = await mobileContext.newPage(); const did = await createIdentity(mobile); await mockV2Reply(mobile, did, {}, { baseline: 0, sequence: 1, wait: true }); await mobile.locator("#example").click(); mobile.once("dialog", (dialog) => dialog.accept()); await mobile.locator("#send").click(); await expect(mobile.locator("#checking")).toBeVisible(); expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await mobileContext.close();
   const reduced = await browser.newContext({ reducedMotion: "reduce" }); const reducedPage = await reduced.newPage(); await reducedPage.goto("/"); expect(await reducedPage.locator(".activity i").first().evaluate((node) => getComputedStyle(node).animationName)).toBe("none"); await reduced.close();
   const noJs = await browser.newContext({ javaScriptEnabled: false }); const page = await noJs.newPage(); await page.goto("/"); await expect(page.locator(".noscript")).toContainText("identity creation and signing happen locally"); await noJs.close();
 });

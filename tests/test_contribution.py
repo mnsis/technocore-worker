@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from worker import PROTOCOL_V2, SHARED_REPLY_ROOM
 from worker.github import (
     GitHubBoundaryError,
     GitHubVerifier,
@@ -20,6 +21,7 @@ from worker.identity import public_did
 from worker.protocol import (
     ProtocolError,
     canonical_contribution_request,
+    canonical_contribution_request_v2,
     parse_request,
 )
 from worker.service import Worker
@@ -234,6 +236,17 @@ def contribution_record(key: Ed25519PrivateKey, sequence: int = 1) -> dict[str, 
     }
 
 
+def contribution_record_v2(
+    key: Ed25519PrivateKey, sequence: int = 1, *, reply_after: int = 0
+) -> dict[str, Any]:
+    return {
+        "from": public_did(key), "nonce": 100, "seq": sequence,
+        "text": canonical_contribution_request_v2(
+            "job-v2", REPOSITORY, SHA, reply_after,
+        ),
+    }
+
+
 def build_worker(tmp_path: Path) -> tuple[Worker, FakeSender, FakeVerifier, State]:
     sender, verifier, state = FakeSender(), FakeVerifier(), State(tmp_path / "jobs.sqlite3")
     worker = Worker(
@@ -263,6 +276,67 @@ def test_contribution_response_is_bounded_granular_and_non_misleading(tmp_path: 
         "requester_commit_authorship",
         "contribution_quality_or_acceptance",
         "flop_eligibility_or_endorsement",
+    }
+
+
+def test_v1_and_v2_route_to_their_exact_reply_streams(tmp_path: Path) -> None:
+    worker, sender, _, _ = build_worker(tmp_path)
+    requester = Ed25519PrivateKey.generate()
+    assert worker.handle(contribution_record(requester)).status == "completed"
+    assert worker.handle(contribution_record_v2(requester, sequence=2, reply_after=5)).status == "completed"
+    assert [post[0] for post in sender.posts] == [REPLY, SHARED_REPLY_ROOM]
+    v2 = json.loads(sender.posts[1][1])
+    assert v2["v"] == PROTOCOL_V2
+    assert v2["request"]["reply_after"] == 5
+    assert v2["request"]["seq"] == 2
+
+
+class CapacityTransport(FakeSender):
+    def __init__(self, owner: str) -> None:
+        super().__init__()
+        self.rooms = {SHARED_REPLY_ROOM}
+        self.owner = owner
+        self.creations = 0
+
+    def create(self, room: str) -> None:
+        self.creations += 1
+        raise RuntimeError("room capacity reached")
+
+    def post_signed(self, room: str, text: str, key: Ed25519PrivateKey, nonce: int) -> Posted:
+        if room not in self.rooms:
+            self.create(room)
+        if public_did(key) != self.owner:
+            raise RuntimeError("owned room rejects writer")
+        return super().post_signed(room, text, key, nonce)
+
+
+def test_room_capacity_refusal_does_not_block_existing_owned_v2_stream(tmp_path: Path) -> None:
+    key = Ed25519PrivateKey.generate()
+    transport = CapacityTransport(public_did(key))
+    with pytest.raises(RuntimeError, match="capacity"):
+        transport.create("mb-p-new-reply-room-000000")
+    worker = Worker(inbox=INBOX, key=key, state=State(tmp_path / "jobs.sqlite3"),
+                    transport=transport, verifier=FakeVerifier())
+    assert worker.handle(contribution_record_v2(Ed25519PrivateKey.generate())).status == "completed"
+    assert transport.posts[0][0] == SHARED_REPLY_ROOM
+    assert transport.creations == 1  # only the explicit refused probe; the job created no room
+    with pytest.raises(RuntimeError, match="rejects writer"):
+        transport.post_signed(SHARED_REPLY_ROOM, "{}", Ed25519PrivateKey.generate(), 2)
+
+
+def test_keepalive_is_minimal_and_only_due_after_six_days(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker, sender, _, state = build_worker(tmp_path)
+    monkeypatch.setattr("worker.service.time.time", lambda: 1_000_000.0)
+    assert worker.keepalive_if_due().status == "keepalive-not-due"
+    state.set_shared_activity(1_000_000.0)
+    assert worker.keepalive_if_due().status == "keepalive-not-due"
+    monkeypatch.setattr("worker.service.time.time", lambda: 1_000_000.0 + 6 * 86400 + 1)
+    assert worker.keepalive_if_due().status == "keepalive-completed"
+    assert sender.posts[-1][0] == SHARED_REPLY_ROOM
+    assert json.loads(sender.posts[-1][1]) == {
+        "kind": "keepalive", "v": PROTOCOL_V2, "worker": worker.did,
     }
 
 
@@ -296,8 +370,7 @@ def test_failed_contribution_reply_retries_persisted_result_without_github(
     )
     requester = Ed25519PrivateKey.generate()
     record = contribution_record(requester)
-    with pytest.raises(RuntimeError, match="reply rejection"):
-        worker.handle(record)
+    assert worker.handle(record).status == "delivery-pending"
     assert verifier.calls == 1
     assert worker.handle(record).status == "completed"
     assert verifier.calls == 1

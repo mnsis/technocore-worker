@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import http.cookiejar
 import json
 import threading
 import urllib.error
@@ -8,14 +10,16 @@ import urllib.request
 from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from worker.identity import public_did
-from worker.protocol import canonical_contribution_request
+from worker.identity import public_did, sign_message
+from worker.protocol import canonical_contribution_request_v2
 from worker.webapp import (
     CSP,
+    MAX_SESSION_BINDINGS,
     ChallengeStore,
     PrototypeHandler,
     RateLimiter,
@@ -99,7 +103,7 @@ def test_static_network_and_csp_audit() -> None:
     root = Path(__file__).parents[1]
     javascript = "\n".join(path.read_text() for path in (root / "web").glob("*.js"))
     html = (root / "web/index.html").read_text()
-    assert javascript.count("fetch(") == 5
+    assert javascript.count("fetch(") == 6
     assert "https://technocore.chat" not in javascript
     assert not any(term in javascript for term in ("localStorage", "sessionStorage", "indexedDB", "document.cookie"))
     assert not any(term in javascript for term in ("console.log", "console.debug", "console.info"))
@@ -122,10 +126,11 @@ def test_public_transport_endpoint_rejects_private_fields() -> None:
         "did": "did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM",
         "nonce": "123",
         "sig": "A" * 86,
-        "text": canonical_contribution_request(
-            "browser-test", "mb-p-0123456789abcdef01234567",
+        "text": canonical_contribution_request_v2(
+            "browser-test",
             "paiin-arc/technocore-beginner-guide",
             "93dab08e185121186d009f9b637a37365c294ea1",
+            0,
         ),
     }
     assert validate_public_envelope(body) == body
@@ -157,6 +162,17 @@ def test_challenge_store_is_bounded() -> None:
         store.consume(first.value, session=SESSION, origin="http://127.0.0.1:8787")
 
 
+def test_browser_session_bindings_are_bounded() -> None:
+    PrototypeHandler.session_dids = {
+        f"{item:032x}": "did" for item in range(MAX_SESSION_BINDINGS + 1)
+    }
+    PrototypeHandler.session_baselines = {f"{item:032x}": item for item in range(2)}
+    PrototypeHandler._prune_session_bindings()
+    assert len(PrototypeHandler.session_dids) == MAX_SESSION_BINDINGS
+    assert f"{0:032x}" not in PrototypeHandler.session_dids
+    assert f"{0:032x}" not in PrototypeHandler.session_baselines
+
+
 @pytest.fixture
 def web_server() -> Iterator[str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), PrototypeHandler)
@@ -167,6 +183,9 @@ def web_server() -> Iterator[str]:
     PrototypeHandler.secure_cookie = False
     PrototypeHandler.store = ChallengeStore()
     PrototypeHandler.limiter = RateLimiter()
+    PrototypeHandler.session_dids = {}
+    PrototypeHandler.session_baselines = {}
+    PrototypeHandler.collector = None
     thread = threading.Thread(target=server.serve_forever)
     thread.start()
     try:
@@ -217,3 +236,50 @@ def test_http_challenge_rate_limit(web_server: str) -> None:
     for _ in range(20):
         assert http_status(urllib.request.Request(web_server + "/api/challenge")) == 200
     assert http_status(urllib.request.Request(web_server + "/api/challenge")) == 429
+
+
+def test_local_v2_job_registration_binds_session_digest_and_sequence(
+    web_server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FakeCollector:
+        def __init__(self) -> None:
+            self.registered: dict[str, Any] | None = None
+            self.confirmed: dict[str, Any] | None = None
+
+        def baseline(self) -> int: return 4
+        def register(self, **values: Any) -> None: self.registered = values
+        def confirm_registration(self, **values: Any) -> None: self.confirmed = values
+
+    fake = FakeCollector()
+    PrototypeHandler.collector = fake  # type: ignore[assignment]
+    monkeypatch.setattr("worker.webapp.technocore_request", lambda body: {"posted": {"seq": 17}})
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    with opener.open(web_server + "/api/challenge") as response:
+        challenge = json.load(response)
+    key = Ed25519PrivateKey.generate()
+    verify_body = json.dumps(proof(key, challenge["challenge"], challenge["payload"])).encode()
+    opener.open(urllib.request.Request(
+        web_server + "/api/challenge/verify", data=verify_body,
+        headers={"Content-Type": "application/json", "Origin": web_server},
+    )).close()
+    with opener.open(web_server + "/api/reply-baseline") as response:
+        assert json.load(response) == {"reply_after": 4}
+    did = public_did(key)
+    text = canonical_contribution_request_v2(
+        "browser-bound", "paiin-arc/technocore-beginner-guide",
+        "93dab08e185121186d009f9b637a37365c294ea1", 4,
+    )
+    envelope = {
+        "did": did, "nonce": "123", "sig": sign_message(key, "mb-technocore-worker", 123, text),
+        "text": text,
+    }
+    opener.open(urllib.request.Request(
+        web_server + "/api/technocore/request", data=json.dumps(envelope).encode(),
+        headers={"Content-Type": "application/json", "Origin": web_server},
+    )).close()
+    digest = hashlib.sha256(text.encode()).hexdigest()
+    assert fake.registered is not None
+    assert fake.registered["did"] == did and fake.registered["request_hash"] == digest
+    assert fake.confirmed == {
+        "session": fake.registered["session"], "job": "browser-bound", "request_sequence": 17,
+    }

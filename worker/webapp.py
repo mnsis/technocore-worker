@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import re
 import secrets
 import threading
 import time
@@ -11,17 +13,20 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from cryptography.exceptions import InvalidSignature
 
+from worker import PROTOCOL_V2
+from worker.collector import ReplyCollector
 from worker.identity import public_key_from_did
 from worker.protocol import DID_RE, ContributionRequest, parse_request
-from worker.transport import BASE_URL, ROOM_RE
+from worker.transport import BASE_URL
 
 CHALLENGE_TTL_SECONDS = 120
 MAX_REQUEST_BYTES = 4096
 MAX_URL_BYTES = 1024
+MAX_SESSION_BINDINGS = 4096
 PURPOSE = "technocore-browser-did-control-v1"
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; "
@@ -43,6 +48,8 @@ def validate_public_envelope(body: dict[str, Any]) -> dict[str, str]:
     request = parse_request(text)
     if not isinstance(request, ContributionRequest):
         raise TypeError("Only contribution-verify requests are accepted.")
+    if request.version != PROTOCOL_V2:
+        raise ValueError("The public browser accepts tc-worker/v2 requests only.")
     return {"did": did, "nonce": nonce, "sig": signature, "text": text}
 
 
@@ -58,22 +65,6 @@ def technocore_request(body: dict[str, str]) -> dict[str, Any]:
         result = json.load(response)
     if not isinstance(result, dict):
         raise TypeError("Technocore returned malformed JSON.")
-    return result
-
-
-def technocore_reply(room: str, since: int, counter: int) -> dict[str, Any]:
-    if not ROOM_RE.fullmatch(room) or not room.startswith("mb-p-"):
-        raise ValueError("Malformed reply mailbox.")
-    if not 0 <= since <= 2**63 - 1 or not 0 <= counter <= 10000:
-        raise ValueError("Malformed reply cursor.")
-    query = urllib.parse.urlencode({"format": "json", "since": since, "limit": 50, "wait": 10, "n": counter})
-    request = urllib.request.Request(
-        f"{BASE_URL}/r/{room}?{query}", headers={"Accept": "application/json"}
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        result = json.load(response)
-    if not isinstance(result, dict) or result.get("room") != room or not isinstance(result.get("messages"), list):
-        raise ValueError("Technocore returned a malformed room response.")
     return result
 
 
@@ -130,12 +121,13 @@ class ChallengeStore:
 
 def verify_challenge(
     store: ChallengeStore, body: dict[str, Any], *, session: str, origin: str
-) -> None:
+) -> str:
     if set(body) != {"did", "challenge", "signature"}:
         raise ValueError("Only DID, challenge, and signature are accepted.")
     did, value, signature = body["did"], body["challenge"], body["signature"]
     if not all(isinstance(item, str) for item in (did, value, signature)):
         raise ValueError("Challenge proof fields must be strings.")
+    assert isinstance(did, str) and isinstance(value, str) and isinstance(signature, str)
     if len(value) > 64 or len(signature) != 86:
         raise ValueError("Malformed challenge proof.")
     challenge = store.consume(value, session=session, origin=origin)
@@ -144,6 +136,7 @@ def verify_challenge(
         public_key_from_did(did).verify(raw, challenge.payload.encode())
     except (ValueError, InvalidSignature) as error:
         raise ValueError("Challenge signature is invalid.") from error
+    return did
 
 
 class RateLimiter:
@@ -177,6 +170,17 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
     secure_cookie = False
     served_commit = "development"
     web_root = Path(__file__).resolve().parents[1] / "web"
+    collector: ReplyCollector | None = None
+    session_dids: ClassVar[dict[str, str]] = {}
+    session_baselines: ClassVar[dict[str, int]] = {}
+    session_lock = threading.Lock()
+
+    @classmethod
+    def _prune_session_bindings(cls) -> None:
+        while len(cls.session_dids) > MAX_SESSION_BINDINGS:
+            stale = next(iter(cls.session_dids))
+            del cls.session_dids[stale]
+            cls.session_baselines.pop(stale, None)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, directory=str(self.web_root), **kwargs)
@@ -260,20 +264,63 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
             )
             return
         if self.path == "/api/meta":
-            self._json(HTTPStatus.OK, {"commit": self.served_commit})
+            self._json(
+                HTTPStatus.OK,
+                {"commit": self.served_commit, "protocol": PROTOCOL_V2},
+            )
             return
-        if self.path.startswith("/api/technocore/reply?"):
+        if self.path == "/api/reply-baseline":
+            try:
+                session, _ = self._session()
+                with self.session_lock:
+                    if session not in self.session_dids:
+                        raise ValueError("DID control is required.")
+                if self.collector is None:
+                    raise RuntimeError("Reply collector is unavailable.")
+                baseline = self.collector.baseline()
+                with self.session_lock:
+                    self.session_baselines[session] = baseline
+                self._json(HTTPStatus.OK, {"reply_after": baseline})
+            except ValueError as error:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            except RuntimeError as error:
+                self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
+        if self.path == "/api/collector/health":
+            health = self.collector.health() if self.collector else None
+            self._json(
+                HTTPStatus.OK if health and health.status != "degraded" else HTTPStatus.SERVICE_UNAVAILABLE,
+                {"status": health.status, "cursor": health.cursor} if health else {"status": "unavailable"},
+            )
+            return
+        if self.path.startswith("/api/jobs/"):
             if not self._rate_limit("reply", 120):
                 return
             try:
                 query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, strict_parsing=True)
-                if set(query) != {"room", "since", "n"} or any(len(value) != 1 for value in query.values()):
-                    raise ValueError("Malformed reply query.")
-                result = technocore_reply(query["room"][0], int(query["since"][0]), int(query["n"][0]))
-            except (OSError, TypeError, ValueError) as error:
-                self._json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+                if set(query) != {"did", "sha256", "n"} or any(len(value) != 1 for value in query.values()):
+                    raise ValueError("Malformed local job query.")
+                job = urllib.parse.urlsplit(self.path).path.removeprefix("/api/jobs/")
+                if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", job):
+                    raise ValueError("Malformed job ID.")
+                if not DID_RE.fullmatch(query["did"][0]) or not re.fullmatch(
+                    r"[0-9a-f]{64}", query["sha256"][0]
+                ) or not query["n"][0].isdigit():
+                    raise ValueError("Malformed local job query.")
+                session, _ = self._session()
+                if self.collector is None:
+                    raise RuntimeError("Reply collector is unavailable.")
+                result = self.collector.wait_result(
+                    session=session, job=job, did=query["did"][0],
+                    request_hash=query["sha256"][0], timeout=10,
+                )
+            except ValueError as error:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
                 return
-            self._json(HTTPStatus.OK, result)
+            except RuntimeError as error:
+                self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+                return
+            self._json(HTTPStatus.OK, {"result": result})
             return
         super().do_GET()
 
@@ -300,9 +347,39 @@ class PrototypeHandler(SimpleHTTPRequestHandler):
                 raise TypeError("Request body must be an object.")
             if self.path == "/api/challenge/verify":
                 session, _ = self._session()
-                verify_challenge(self.store, body, session=session, origin=origin)
+                proved_did = verify_challenge(self.store, body, session=session, origin=origin)
+                with self.session_lock:
+                    self.session_dids[session] = proved_did
+                    self._prune_session_bindings()
             else:
-                result = technocore_request(validate_public_envelope(body))
+                envelope = validate_public_envelope(body)
+                session, _ = self._session()
+                request = parse_request(envelope["text"])
+                if not isinstance(request, ContributionRequest) or request.reply_after is None:
+                    raise ValueError("Malformed tc-worker/v2 request.")
+                with self.session_lock:
+                    if self.session_dids.get(session) != envelope["did"]:
+                        raise ValueError("Request DID does not match this browser session.")
+                    issued = self.session_baselines.get(session)
+                if issued is None or request.reply_after != issued:
+                    raise ValueError("Request baseline was not issued to this browser session.")
+                if self.collector is None:
+                    raise RuntimeError("Reply collector is unavailable.")
+                digest = hashlib.sha256(envelope["text"].encode()).hexdigest()
+                self.collector.register(
+                    session=session, job=request.job_id, did=envelope["did"],
+                    request_hash=digest, reply_after=request.reply_after,
+                )
+                result = technocore_request(envelope)
+                posted = result.get("posted")
+                if not isinstance(posted, dict) or not isinstance(posted.get("seq"), int):
+                    raise RuntimeError("Technocore returned malformed request provenance.")
+                self.collector.confirm_registration(
+                    session=session, job=request.job_id, request_sequence=posted["seq"]
+                )
+        except RuntimeError as error:
+            self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": str(error)})
+            return
         except (TypeError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
@@ -337,6 +414,8 @@ def serve(
     *,
     public_origin: str | None = None,
     served_commit: str = "development",
+    collector_database: Path | None = None,
+    worker_did: str | None = None,
 ) -> None:
     origin = public_origin or f"http://{host}:{port}"
     parsed = urllib.parse.urlsplit(origin)
@@ -352,4 +431,15 @@ def serve(
     PrototypeHandler.served_commit = served_commit
     PrototypeHandler.store = ChallengeStore()
     PrototypeHandler.limiter = RateLimiter()
-    ThreadingHTTPServer((host, port), PrototypeHandler).serve_forever()
+    PrototypeHandler.session_dids = {}
+    PrototypeHandler.session_baselines = {}
+    collector = None
+    if collector_database is not None and worker_did is not None:
+        collector = ReplyCollector(collector_database, worker_did=worker_did)
+        collector.start()
+    PrototypeHandler.collector = collector
+    try:
+        ThreadingHTTPServer((host, port), PrototypeHandler).serve_forever()
+    finally:
+        if collector is not None:
+            collector.stop()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any, Protocol
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from worker import PROTOCOL_V2, SHARED_REPLY_ROOM
 from worker.github import GitHubVerifier, Verification
 from worker.identity import public_did
 from worker.protocol import (
@@ -84,7 +86,7 @@ class Worker:
             if existing.conflict:
                 return Outcome("job-conflict")
             pending = self.state.pending_claim(requester, request.job_id, request_hash)
-            return self._deliver(pending) if pending is not None else Outcome("duplicate")
+            return self._try_deliver(pending) if pending is not None else Outcome("duplicate")
         repository: str | None = None
         claimed_commit: str | None = None
         resolved_commit: str | None = None
@@ -114,13 +116,23 @@ class Worker:
             resolved_commit_sha=resolved_commit,
             checks=checks,
             requested_file_path=request.file_path if isinstance(request, ContributionRequest) else None,
+            protocol_version=request.version if isinstance(request, ContributionRequest) else "tc-worker/v1",
+            reply_after=request.reply_after if isinstance(request, ContributionRequest) else None,
         )
         if not claim.inserted:
             return Outcome("job-conflict" if claim.conflict else "duplicate")
         pending = self.state.pending_claim(requester, request.job_id, request_hash)
         if pending is None:  # pragma: no cover - the inserted row must be readable
             raise RuntimeError("newly claimed job is missing")
-        return self._deliver(pending)
+        return self._try_deliver(pending)
+
+    def _try_deliver(self, pending: PendingJob) -> Outcome:
+        try:
+            return self._deliver(pending)
+        except Exception as error:  # noqa: BLE001 - durable outbox retries all delivery failures
+            self.state.delivery_failed(pending.requester_did, pending.job_id, str(error))
+            logger.warning("reply delivery pending for request sequence %s", pending.request_sequence)
+            return Outcome("delivery-pending")
 
     def _deliver(self, pending: PendingJob) -> Outcome:
         if pending.capability == "contribution-verify":
@@ -134,6 +146,8 @@ class Worker:
                 request_sequence=pending.request_sequence,
                 request_hash=pending.request_hash,
                 checks=pending.checks,
+                version=pending.version,
+                reply_after=pending.reply_after,
             )
         else:
             response_text = canonical_response(
@@ -150,7 +164,22 @@ class Worker:
             pending.response_room, response_text, self.key, outbound_nonce
         )
         self.state.complete(pending.requester_did, pending.job_id, posted.sequence)
+        if pending.version == PROTOCOL_V2:
+            self.state.set_shared_activity(time.time())
         return Outcome("completed", posted)
+
+    def keepalive_if_due(self) -> Outcome:
+        last = self.state.shared_activity()
+        if last is None or time.time() - last < 6 * 86400:
+            return Outcome("keepalive-not-due")
+        text = json.dumps(
+            {"kind": "keepalive", "v": PROTOCOL_V2, "worker": self.did},
+            separators=(",", ":"), sort_keys=True,
+        )
+        nonce = self.state.next_nonce(SHARED_REPLY_ROOM, time.time_ns())
+        posted = self.transport.post_signed(SHARED_REPLY_ROOM, text, self.key, nonce)
+        self.state.set_shared_activity(time.time())
+        return Outcome("keepalive-completed", posted)
 
 
 def run_forever(*, inbox: str, key: Ed25519PrivateKey, state: State) -> None:
@@ -160,6 +189,12 @@ def run_forever(*, inbox: str, key: Ed25519PrivateKey, state: State) -> None:
     failures = 0
     while True:
         try:
+            for pending in state.pending_jobs():
+                worker._try_deliver(pending)
+            try:
+                worker.keepalive_if_due()
+            except Exception:
+                logger.exception("shared reply keepalive failed")
             response = transport.read(inbox, since=cursor, wait=10)
             first_seq = response.get("first_seq")
             if isinstance(first_seq, int) and first_seq > cursor + 1:

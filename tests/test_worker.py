@@ -4,13 +4,12 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
-import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from worker.identity import public_did
 from worker.protocol import canonical_request
 from worker.service import Worker
-from worker.state import State
+from worker.state import SCHEMA, State
 from worker.transport import Posted
 
 INBOX = "mb-p-fedcba9876543210fedcba98"
@@ -102,8 +101,7 @@ def test_failed_reply_is_retried_without_reprocessing_request(tmp_path: Path) ->
     )
     requester = Ed25519PrivateKey.generate()
     record = signed_record(requester)
-    with pytest.raises(RuntimeError, match="reply rejection"):
-        worker.handle(record)
+    assert worker.handle(record).status == "delivery-pending"
     request_hash = hashlib.sha256(str(record["text"]).encode()).hexdigest()
     assert state.pending_claim(public_did(requester), "job-1", request_hash) is not None
     assert worker.handle(record).status == "completed"
@@ -153,3 +151,21 @@ def test_private_key_and_request_text_are_not_in_database(tmp_path: Path) -> Non
         columns = [row[1] for row in connection.execute("PRAGMA table_info(jobs)")]
     assert "request_text" not in columns
     assert "private_key" not in columns
+
+
+def test_existing_v1_database_migrates_without_rewriting_pending_job(tmp_path: Path) -> None:
+    path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(SCHEMA)
+        connection.execute(
+            """INSERT INTO jobs (job_id, requester_did, request_room, request_sequence,
+            received_at, capability, status, request_hash, result_json, response_room)
+            VALUES ('old-job', ?, ?, 3, '2026-01-01', 'echo-analysis', 'processed', ?, '{}', ?)""",
+            ("did:key:z6Mk" + "1" * 44, INBOX, "a" * 64, REPLY),
+        )
+    state = State(path)
+    pending = state.pending_claim("did:key:z6Mk" + "1" * 44, "old-job", "a" * 64)
+    assert pending is not None
+    assert pending.version == "tc-worker/v1"
+    assert pending.response_room == REPLY
+    assert pending.reply_after is None

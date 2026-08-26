@@ -26,6 +26,8 @@ def parser() -> argparse.ArgumentParser:
     web.add_argument("--port", type=int, default=18787)
     web.add_argument("--public-origin", default=None)
     web.add_argument("--served-commit", default="development")
+    web.add_argument("--collector-database", type=Path, default=None)
+    web.add_argument("--worker-did", default=None)
     return result
 
 
@@ -45,6 +47,8 @@ def main() -> None:
             args.port,
             public_origin=args.public_origin,
             served_commit=args.served_commit,
+            collector_database=args.collector_database,
+            worker_did=args.worker_did,
         )
         return
     identity = args.identity or Path(os.environ["TC_WORKER_IDENTITY"])
