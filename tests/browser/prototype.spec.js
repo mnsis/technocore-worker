@@ -56,15 +56,38 @@ test("imports PEM, rejects wrong password, validates inputs, optional path, and 
   await page.locator("#repository").fill("bad repository"); await page.locator("#commit").fill("short"); await expect(page.locator("#repository-error")).toBeVisible(); await expect(page.locator("#commit-error")).toBeVisible(); await expect(page.locator("#status")).toHaveText("DID control demonstrated");
   const releaseReply = await mockV2Reply(page, did, { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "CONFIRMED" } }, { wait: true });
   await page.locator("#repository").fill("paiin-arc/technocore-beginner-guide"); await page.locator("#commit").fill("93dab08e185121186d009f9b637a37365c294ea1"); await page.locator("#path").fill("README.md"); await page.locator("#send").click(); await expect(page.locator("#checking")).toBeVisible(); await expect(page.locator("#github-form-wrap")).toBeHidden(); await expect(page.locator(".activity")).toBeVisible(); await expect(page.locator('[data-stage="github"]')).toHaveClass(/completed/); await expect(page.locator('[data-stage="result"]')).toHaveClass(/current/); await expect(page.locator("#download")).toHaveText("Download backup"); const firstElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(350); expect(await page.locator("#waiting-elapsed").textContent()).not.toBe(firstElapsed); releaseReply();
-  await expect(page.locator("#status")).toHaveText("Response received"); const stoppedElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(250); expect(await page.locator("#waiting-elapsed").textContent()).toBe(stoppedElapsed); await expect(page.locator("#result-stage")).toBeVisible(); await expect(page.locator("#checking")).toBeHidden(); await expect(page.locator("#github-stage")).toBeHidden(); await expect(page.locator("#result-worker")).toHaveText(WORKER_DID); await expect(page.locator("#result-requester")).toHaveText(did); await expect(page.locator("#result-file")).toHaveText("CONFIRMED");
+  await expect(page.locator("#status")).toHaveText("Response received"); const stoppedElapsed = await page.locator("#waiting-elapsed").textContent(); await page.waitForTimeout(250); expect(await page.locator("#waiting-elapsed").textContent()).toBe(stoppedElapsed); await expect(page.locator("#result-stage")).toBeVisible(); await expect(page.locator("#checking")).toBeHidden(); await expect(page.locator("#github-stage")).toBeHidden(); await expect(page.locator("#result-worker")).toHaveText(WORKER_DID); await expect(page.locator("#result-requester")).toHaveText(did); await expect(page.locator("#result-file")).toHaveText("CONFIRMED"); await expect(page.locator("#result-file")).toHaveClass("confirmed");
   await page.locator("#check-another").click(); await expect(page.locator("#github-form-wrap")).toBeVisible(); await expect(page.locator("#did")).toHaveText(did); await expect(page.locator("#identity-setup")).toBeHidden();
 });
 
 test("renders UNAVAILABLE without calling it a failure and exposes source metadata", async ({ page }) => {
   await page.route("**/api/meta", (route) => route.fulfill({ json: { commit: "a".repeat(40) } })); await createIdentity(page);
   const did = await page.locator("#did").textContent(); await mockV2Reply(page, did, { repository: { status: "UNAVAILABLE" }, commit: { status: "UNAVAILABLE" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 1 });
-  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click(); await expect(page.locator("#result-repository")).toHaveText("UNAVAILABLE"); await expect(page.locator("body")).not.toContainText("VERIFIED");
+  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click(); await expect(page.locator("#result-repository")).toHaveText("UNAVAILABLE"); await expect(page.locator("#result-file")).toHaveText("NOT REQUESTED"); await expect(page.locator("#result-file")).toHaveClass("neutral"); await expect(page.locator("#result-file")).not.toHaveClass("secondary"); await expect(page.locator("body")).not.toContainText("VERIFIED");
   await expect(page.locator("#served-commit")).toHaveText("a".repeat(40)); await expect(page.locator(`footer code:has-text("${WORKER_DID}")`)).toBeVisible(); expect(await page.locator('a[href="https://x.com/amjawaeth"]').count()).toBe(1); expect(await page.locator('a[href="https://x.com/flop_labs"]').count()).toBe(1);
+});
+
+test("requested file preserves absent and unavailable semantics", async ({ page, browserName }) => {
+  test.skip(browserName !== "chromium", "Presentation mapping is browser-independent.");
+  const did = await createIdentity(page); const jobs = new Map(); let submission = 0;
+  await page.route("**/api/reply-baseline", (route) => route.fulfill({ json: { reply_after: 3 } }));
+  await page.route("**/api/technocore/request", async (route) => {
+    const body = route.request().postDataJSON(); const request = JSON.parse(body.text); submission += 1;
+    jobs.set(request.job, { request, hash: createHash("sha256").update(body.text).digest("hex"), sequence: 20 + submission, status: submission === 1 ? "NOT_FOUND" : "UNAVAILABLE" });
+    await route.fulfill({ json: { posted: { seq: 20 + submission, from: did, text: body.text } } });
+  });
+  await page.route("**/api/jobs/**", (route) => {
+    const job = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop()); const item = jobs.get(job);
+    return route.fulfill({ json: { result: { capability: "contribution-verify", checks: { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: item.status, path: "missing.txt" } }, job, request: { did, room: "mb-technocore-worker", seq: item.sequence, sha256: item.hash, reply_after: 3 }, status: "completed", v: "tc-worker/v2", worker: WORKER_DID } } });
+  });
+  page.on("dialog", (dialog) => dialog.accept());
+  for (const expected of ["NOT_FOUND", "UNAVAILABLE"]) {
+    await page.locator("#example").click(); await page.locator("#path").fill("missing.txt"); await page.locator("#send").click();
+    await expect(page.locator("#result-file")).toHaveText(expected);
+    if (expected === "UNAVAILABLE") await expect(page.locator("#result-file")).toHaveClass("secondary");
+    else await expect(page.locator("#result-file")).not.toHaveClass("secondary");
+    if (expected === "NOT_FOUND") await page.locator("#check-another").click();
+  }
 });
 
 test("browser timeout does not resubmit the Technocore job", async ({ page, browserName }) => {
