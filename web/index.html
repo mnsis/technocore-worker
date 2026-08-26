@@ -10,6 +10,7 @@
   <link rel="icon" href="mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="result.css">
+  <link rel="stylesheet" href="receipt.css">
   <link rel="stylesheet" href="state.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -44,11 +45,11 @@
               <button id="show-create" class="tab active" type="button" role="tab" aria-selected="true">Create identity</button>
               <button id="show-import" class="tab" type="button" role="tab" aria-selected="false">Import identity.pem</button>
             </div>
-            <form id="create-panel" class="identity-form" autocomplete="off" onsubmit="return false">
+            <form id="create-panel" class="identity-form" autocomplete="off">
               <div class="fields two"><label>Passphrase <small>12+ characters</small><input id="new-passphrase" type="password" minlength="12" autocomplete="new-password"></label><label>Confirm passphrase<input id="confirm-passphrase" type="password" minlength="12" autocomplete="new-password"></label></div>
               <button id="create" class="primary" type="button">Create identity</button>
             </form>
-            <form id="import-panel" class="identity-form" autocomplete="off" onsubmit="return false" hidden>
+            <form id="import-panel" class="identity-form" autocomplete="off" hidden>
               <div class="fields two"><label>Technocore identity.pem<input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label><label>Passphrase<input id="import-passphrase" type="password" autocomplete="current-password"></label></div>
               <p class="warning">Use a Technocore identity.pem only. Never enter a wallet seed phrase or wallet private key.</p>
               <button id="import" class="primary" type="button">Import locally</button>
@@ -84,11 +85,20 @@
         </div>
 
         <div id="result-stage" hidden>
-          <div class="receipt-head"><div><p class="kicker">Result</p><h2>Check complete</h2></div><span id="result-time" class="response-time"></span></div>
-          <div class="receipt-rows"><div><span>Repository</span><strong id="result-repository"></strong></div><div><span>Commit</span><strong id="result-commit"></strong></div><div><span>File</span><strong id="result-file"></strong></div><div><span>Response time</span><strong id="result-time-row"></strong></div></div>
-          <div class="receipt-meta"><div><span>Requester DID</span><code id="result-requester"></code></div><div><span>Worker</span><code id="result-worker"></code></div></div>
-          <p class="scope-note">Confirms only the repository and commit facts shown here. It does not establish authorship, ownership, contribution quality, FLOP eligibility, or endorsement.</p>
-          <div class="result-actions"><button id="check-another" class="primary" type="button">Check another commit</button><details><summary>Detailed limitations</summary><p>This is a best-effort community service with no uptime guarantee. GitHub availability or rate limits may produce UNAVAILABLE, which is not a failed contribution check.</p></details></div>
+          <div id="shareable-receipt" class="receipt-artifact" hidden>
+            <div class="receipt-title"><div><span class="receipt-wordmark">TECHNOCORE</span><h2>CHECK RECEIPT</h2></div><span id="receipt-id" class="receipt-id"></span></div>
+            <div class="receipt-target"><span class="receipt-label">REPOSITORY</span><strong id="receipt-repository"></strong><span class="receipt-label">COMMIT</span><code id="receipt-commit"></code></div>
+            <div class="receipt-checks"><div><span>REPOSITORY</span><strong id="result-repository"></strong></div><div><span>COMMIT</span><strong id="result-commit"></strong></div><div><span>FILE</span><strong id="result-file"></strong></div></div>
+            <div class="receipt-through"><span>Checked through Technocore</span><time id="result-time"></time></div>
+            <div class="receipt-dids"><div><span>Requester</span><code id="result-requester-short"></code></div><div><span>Worker</span><code id="result-worker-short"></code></div></div>
+            <div class="receipt-share" aria-label="Receipt actions"><button id="copy-receipt" class="primary" type="button">Copy receipt</button><button id="share-x" class="secondary-action" type="button">Share on X</button><button id="download-receipt" class="secondary-action" type="button">Download image</button><label class="image-option"><input id="include-did-image" type="checkbox" checked> Include my DID in image</label></div>
+            <p id="share-feedback" class="share-feedback" role="status" aria-live="polite"></p>
+            <details id="provenance" class="receipt-provenance"><summary>View provenance</summary><div class="provenance-grid"><div><span>Requester DID</span><code id="result-requester"></code><button class="copy-value" type="button" data-copy-target="result-requester">Copy</button></div><div><span>Worker DID</span><code id="result-worker"></code><button class="copy-value" type="button" data-copy-target="result-worker">Copy</button></div><div><span>Full commit SHA</span><code id="provenance-commit"></code></div><div><span>Request sequence</span><code id="provenance-sequence"></code></div><div><span>Request digest</span><code id="provenance-digest"></code></div><div><span>Protocol</span><code id="provenance-version"></code></div></div><p>Receipt ID uses the first eight hexadecimal characters of the bound request SHA-256, uppercased and grouped 4-4. It is a display identifier only.</p></details>
+            <p class="receipt-scope">Confirms only the repository and commit facts shown here. It does not establish authorship, ownership, contribution quality, FLOP eligibility, token allocation, or endorsement.</p>
+          </div>
+          <div id="neutral-result" class="neutral-result" hidden><div class="receipt-head"><div><p class="kicker">Result</p><h2>Check complete</h2></div><span id="neutral-result-time" class="response-time"></span></div><div class="receipt-rows"><div><span>Repository</span><strong id="neutral-repository"></strong></div><div><span>Commit</span><strong id="neutral-commit"></strong></div><div><span>File</span><strong id="neutral-file"></strong></div></div><p class="scope-note">The worker did not confirm both repository and commit facts. UNAVAILABLE is indeterminate, not a failed contribution check.</p></div>
+          <div class="receipt-footer-actions"><button id="check-another" class="primary" type="button">Check another commit</button><details><summary>Detailed limitations</summary><p>This is a best-effort community service with no uptime guarantee. GitHub availability or rate limits may produce UNAVAILABLE, which is not a failed contribution check.</p></details></div>
+          <canvas id="receipt-canvas" width="1200" height="675" hidden aria-label="Generated receipt image"></canvas>
         </div>
       </section>
     </main>

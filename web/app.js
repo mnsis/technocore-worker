@@ -1,7 +1,8 @@
 import { didFromPrivateKey, exportEncryptedPem, generateIdentity, importEncryptedPem, sign } from "./crypto.js";
 import { WORKER_DID, WORKER_INBOX, canonicalContributionRequest, freshJobId, freshNonce, parseWorkerReply, signedWrite } from "./protocol.js";
+import { abbreviate, copyReceiptText, drawReceipt, filePresentation, receiptId, xShareText } from "./receipt.js";
 
-let privateKey = null; let did = null; let downloaded = false; let controlProved = false; let pollAbort = null; let pemBlobUrl = null; let elapsedTimer = null;
+let privateKey = null; let did = null; let downloaded = false; let controlProved = false; let pollAbort = null; let pemBlobUrl = null; let elapsedTimer = null; let currentReceipt = null; let feedbackTimer = null;
 const byId = (id) => document.getElementById(id);
 const status = (message, kind = "") => { byId("status").textContent = message; byId("status").dataset.kind = kind; };
 const fieldRules = {
@@ -21,6 +22,7 @@ function selectIdentityPanel(name) {
   for (const [id, active] of [["show-create", create], ["show-import", !create]]) { byId(id).classList.toggle("active", active); byId(id).setAttribute("aria-selected", String(active)); }
 }
 byId("show-create").addEventListener("click", () => selectIdentityPanel("create")); byId("show-import").addEventListener("click", () => selectIdentityPanel("import"));
+for (const form of document.querySelectorAll(".identity-form")) form.addEventListener("submit", (event) => event.preventDefault());
 
 function validateContribution(showAll = false) {
   let valid = Boolean(privateKey && controlProved);
@@ -66,7 +68,7 @@ byId("import").addEventListener("click", async () => {
 });
 
 function resetGithub() {
-  pollAbort?.abort(); stopElapsed(); document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("download").textContent = "Download identity.pem"; byId("result-stage").hidden = true; byId("checking").hidden = true; byId("github-stage").hidden = false; byId("github-form-wrap").hidden = false; byId("repository").value = ""; byId("commit").value = ""; byId("path").value = ""; touchedFields.clear();
+  pollAbort?.abort(); stopElapsed(); currentReceipt = null; clearTimeout(feedbackTimer); byId("share-feedback").textContent = ""; byId("copy-receipt").textContent = "Copy receipt"; byId("include-did-image").checked = true; byId("provenance").open = false; document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("download").textContent = "Download identity.pem"; byId("result-stage").hidden = true; byId("checking").hidden = true; byId("github-stage").hidden = false; byId("github-form-wrap").hidden = false; byId("repository").value = ""; byId("commit").value = ""; byId("path").value = ""; touchedFields.clear();
   for (const item of byId("execution").children) item.className = ""; validateContribution(); setProgress("github", ["identity", "control"]); status("Ready for another check", "ok");
 }
 byId("use-another").addEventListener("click", () => {
@@ -83,13 +85,33 @@ async function pollReply(expected) {
   throw new Error("Timed out waiting for the worker response.");
 }
 function resultState(value) { return value === "CONFIRMED" ? "confirmed" : value === "UNAVAILABLE" ? "secondary" : value === "NOT REQUESTED" ? "neutral" : ""; }
-function showResult(result, elapsed, requestedPath) {
+function setResultValue(id, value) { const target = byId(id); target.textContent = value || "UNAVAILABLE"; target.className = resultState(target.textContent); }
+function showResult(result, elapsed, requestContext) {
   stopElapsed();
-  const values = { repository: result.checks?.repository?.status, commit: result.checks?.commit?.status, file: requestedPath ? result.checks?.requested_file?.status : "NOT REQUESTED" };
-  for (const [name, value] of Object.entries(values)) { const target = byId(`result-${name}`); target.textContent = value || "UNAVAILABLE"; target.className = resultState(target.textContent); }
-  const duration = `${(elapsed / 1000).toFixed(1)}s`; byId("result-time").textContent = duration; byId("result-time-row").textContent = duration; byId("result-worker").textContent = result.worker; byId("result-requester").textContent = result.request.did;
+  const values = { repository: result.checks?.repository?.status || "UNAVAILABLE", commit: result.checks?.commit?.status || "UNAVAILABLE", file: filePresentation(result, requestContext.path) };
+  const duration = `${(elapsed / 1000).toFixed(1)}s`; const safe = values.repository === "CONFIRMED" && values.commit === "CONFIRMED";
+  currentReceipt = { repository: requestContext.repository, commit: requestContext.commit, path: requestContext.path, repositoryStatus: values.repository, commitStatus: values.commit, fileStatus: values.file, requesterDid: result.request.did, workerDid: result.worker, requestSequence: result.request.seq, requestDigest: result.request.sha256, protocol: result.v, receiptId: receiptId(result.request.sha256), duration };
+  byId("shareable-receipt").hidden = !safe; byId("neutral-result").hidden = safe;
+  if (safe) {
+    setResultValue("result-repository", values.repository); setResultValue("result-commit", values.commit); setResultValue("result-file", values.file);
+    byId("receipt-id").textContent = `Receipt ${currentReceipt.receiptId}`; byId("receipt-repository").textContent = currentReceipt.repository; byId("receipt-commit").textContent = currentReceipt.commit; byId("result-time").textContent = duration;
+    byId("result-requester-short").textContent = abbreviate(currentReceipt.requesterDid); byId("result-worker-short").textContent = abbreviate(currentReceipt.workerDid);
+    byId("result-requester").textContent = currentReceipt.requesterDid; byId("result-worker").textContent = currentReceipt.workerDid; byId("provenance-commit").textContent = currentReceipt.commit; byId("provenance-sequence").textContent = String(currentReceipt.requestSequence); byId("provenance-digest").textContent = currentReceipt.requestDigest; byId("provenance-version").textContent = currentReceipt.protocol;
+  } else {
+    setResultValue("neutral-repository", values.repository); setResultValue("neutral-commit", values.commit); setResultValue("neutral-file", values.file); byId("neutral-result-time").textContent = duration;
+  }
   byId("github-stage").hidden = true; byId("result-stage").hidden = false; setProgress("result", ["identity", "control", "github"]); status("Response received", "ok");
 }
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return; }
+  const input = document.createElement("textarea"); input.value = value; input.setAttribute("readonly", ""); input.className = "sr-only"; document.body.append(input); input.select(); const copied = document.execCommand("copy"); input.remove(); if (!copied) throw new Error("Copy is not available in this browser.");
+}
+function copiedFeedback(button, label = "Copied ✓") { clearTimeout(feedbackTimer); button.textContent = label; byId("share-feedback").textContent = "Receipt copied to clipboard."; feedbackTimer = setTimeout(() => { button.textContent = "Copy receipt"; byId("share-feedback").textContent = ""; }, 2200); }
+byId("copy-receipt").addEventListener("click", async () => { if (!currentReceipt) return; try { await copyText(copyReceiptText(currentReceipt)); copiedFeedback(byId("copy-receipt")); } catch (error) { byId("share-feedback").textContent = error.message; } });
+byId("share-x").addEventListener("click", () => { if (!currentReceipt) return; const url = `https://x.com/intent/post?text=${encodeURIComponent(xShareText(currentReceipt, location.origin))}`; window.open(url, "_blank", "noopener,noreferrer"); });
+byId("download-receipt").addEventListener("click", () => { if (!currentReceipt) return; const canvas = drawReceipt(byId("receipt-canvas"), currentReceipt, byId("include-did-image").checked); canvas.toBlob((blob) => { if (!blob) { byId("share-feedback").textContent = "Could not generate receipt image."; return; } const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `technocore-check-${currentReceipt.receiptId}.png`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 0); }, "image/png"); });
+for (const button of document.querySelectorAll(".copy-value")) button.addEventListener("click", async () => { const value = byId(button.dataset.copyTarget).textContent; try { await copyText(value); button.textContent = "Copied ✓"; setTimeout(() => { button.textContent = "Copy"; }, 1800); } catch (error) { byId("share-feedback").textContent = error.message; } });
 byId("contribution").addEventListener("submit", async (event) => {
   event.preventDefault(); try {
     if (!validateContribution(true)) return; const repository = byId("repository").value.trim(); const commit = byId("commit").value.trim(); const path = byId("path").value.trim();
@@ -98,7 +120,7 @@ byId("contribution").addEventListener("submit", async (event) => {
     const baselineResponse = await fetch("/api/reply-baseline", { headers: { Accept: "application/json" }, cache: "no-store" }); if (!baselineResponse.ok) throw new Error("Worker reply service is temporarily unavailable."); const baseline = await baselineResponse.json(); const replyAfter = baseline.reply_after;
     const job = freshJobId(); const nonce = freshNonce(); const text = canonicalContributionRequest({ job, repository, commit, path: path || undefined, replyAfter }); const body = await signedWrite(privateKey, did, WORKER_INBOX, nonce, text); execution("sent");
     const response = await fetch("/api/technocore/request", { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error("Technocore rejected the signed request."); const posted = await response.json(); if (!Number.isInteger(posted.posted?.seq) || posted.posted?.from !== did || posted.posted?.text !== text) throw new Error("Technocore returned a mismatched write receipt."); execution("waiting"); status("Waiting for worker");
-    const result = await pollReply({ job, did, sha256: await sha256(text), sequence: posted.posted.seq, replyAfter }); if (result.worker !== WORKER_DID || result.request.did !== did) throw new Error("Worker response identity mismatch."); for (const item of byId("execution").children) item.className = "done"; byId("execution").querySelector('[data-step="waiting"] span:nth-of-type(2)').textContent = "Worker replied"; showResult(result, performance.now() - started, path);
+    const requestDigest = await sha256(text); const result = await pollReply({ job, did, sha256: requestDigest, sequence: posted.posted.seq, replyAfter }); if (result.worker !== WORKER_DID || result.request.did !== did) throw new Error("Worker response identity mismatch."); for (const item of byId("execution").children) item.className = "done"; byId("execution").querySelector('[data-step="waiting"] span:nth-of-type(2)').textContent = "Worker replied"; showResult(result, performance.now() - started, { repository, commit, path, requestDigest });
   } catch (error) { stopElapsed(); document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("checking").hidden = true; byId("github-form-wrap").hidden = false; setProgress("github", ["identity", "control"]); status(error.name === "AbortError" ? "Polling stopped." : error.message, "error"); }
   finally { validateContribution(); pollAbort = null; }
 });

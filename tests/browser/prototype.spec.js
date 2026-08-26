@@ -60,10 +60,24 @@ test("imports PEM, rejects wrong password, validates inputs, optional path, and 
   await page.locator("#check-another").click(); await expect(page.locator("#github-form-wrap")).toBeVisible(); await expect(page.locator("#did")).toHaveText(did); await expect(page.locator("#identity-setup")).toBeHidden();
 });
 
-test("renders UNAVAILABLE without calling it a failure and exposes source metadata", async ({ page }) => {
+test("renders a shareable receipt and exposes source metadata", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__copied = null; window.__opened = null; window.__canvasText = [];
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (value) => { window.__copied = value; } }, configurable: true });
+    window.open = (url) => { window.__opened = url; return null; };
+    const original = CanvasRenderingContext2D.prototype.fillText; CanvasRenderingContext2D.prototype.fillText = function (...args) { window.__canvasText.push(String(args[0])); return original.apply(this, args); };
+  });
+  const requests = []; const consoleErrors = []; page.on("request", (request) => requests.push(request.url())); page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   await page.route("**/api/meta", (route) => route.fulfill({ json: { commit: "a".repeat(40) } })); await createIdentity(page);
-  const did = await page.locator("#did").textContent(); await mockV2Reply(page, did, { repository: { status: "UNAVAILABLE" }, commit: { status: "UNAVAILABLE" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 1 });
-  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click(); await expect(page.locator("#result-repository")).toHaveText("UNAVAILABLE"); await expect(page.locator("#result-file")).toHaveText("NOT REQUESTED"); await expect(page.locator("#result-file")).toHaveClass("neutral"); await expect(page.locator("#result-file")).not.toHaveClass("secondary"); await expect(page.locator("body")).not.toContainText("VERIFIED");
+  const did = await page.locator("#did").textContent(); await mockV2Reply(page, did, { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 1 });
+  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click(); await expect(page.locator("#shareable-receipt")).toBeVisible(); await expect(page.locator("#result-repository")).toHaveText("CONFIRMED"); await expect(page.locator("#result-file")).toHaveText("NOT REQUESTED"); await expect(page.locator("#result-file")).toHaveClass("neutral"); await expect(page.locator("body")).not.toContainText("VERIFIED");
+  const digest = await page.locator("#provenance-digest").textContent(); const expectedId = `${digest.slice(0, 4).toUpperCase()}-${digest.slice(4, 8).toUpperCase()}`; await expect(page.locator("#receipt-id")).toHaveText(`Receipt ${expectedId}`);
+  await expect(page.locator("#provenance")).not.toHaveAttribute("open"); await page.locator("#provenance summary").click(); await expect(page.locator("#provenance")).toHaveAttribute("open", ""); await expect(page.locator("#result-requester")).toHaveText(did); await expect(page.locator("#result-worker")).toHaveText(WORKER_DID); await expect(page.locator("#provenance-commit")).toHaveText("93dab08e185121186d009f9b637a37365c294ea1"); await expect(page.locator("#provenance-sequence")).toHaveText("1"); await expect(page.locator("#provenance-version")).toHaveText("tc-worker/v2");
+  await page.locator("#copy-receipt").click(); const copied = await page.evaluate(() => window.__copied); expect(copied).toBe(`Technocore check\n\npaiin-arc/technocore-beginner-guide\n93dab08e185121186d009f9b637a37365c294ea1\n\nRepository: CONFIRMED\nCommit: CONFIRMED\nFile: NOT REQUESTED\n\nChecked through Technocore\nReceipt: ${expectedId}\n\nWorker: did:key:z6Mkkt…LPNH8djM`); await expect(page.locator("#copy-receipt")).toHaveText("Copied ✓");
+  expect(await page.evaluate(() => window.__opened)).toBeNull(); await page.locator("#share-x").click(); const opened = new URL(await page.evaluate(() => window.__opened)); expect(opened.origin).toBe("https://x.com"); expect(opened.pathname).toBe("/intent/post"); expect(opened.searchParams.get("text")).toBe(`Checked a GitHub commit through Technocore.\n\npaiin-arc/technocore-beginner-guide\nRepository ✓\nCommit ✓\n\nReceipt ${expectedId}\n\nhttp://127.0.0.1:18787`);
+  const firstDownload = page.waitForEvent("download"); await page.locator("#download-receipt").click(); const png = await (await firstDownload).createReadStream().then(async (stream) => { const parts = []; for await (const part of stream) parts.push(part); return Buffer.concat(parts); }); expect(png.readUInt32BE(16)).toBe(1200); expect(png.readUInt32BE(20)).toBe(675); expect(await page.evaluate(() => window.__canvasText.some((value) => value.startsWith("Requester  did:key:")))).toBe(true);
+  await page.evaluate(() => { window.__canvasText = []; }); await page.locator("#include-did-image").uncheck(); const secondDownload = page.waitForEvent("download"); await page.locator("#download-receipt").click(); await secondDownload; expect(await page.evaluate(() => window.__canvasText.includes("Requester DID hidden"))).toBe(true); expect(await page.evaluate(() => window.__canvasText.some((value) => value.startsWith("Requester  did:key:")))).toBe(false);
+  const ids = await page.evaluate(async () => { const module = await import("/receipt.js"); return [module.receiptId("a".repeat(64)), module.receiptId("b".repeat(64))]; }); expect(ids).toEqual(["AAAA-AAAA", "BBBB-BBBB"]); expect(consoleErrors).toEqual([]); expect(requests.every((url) => new URL(url).origin === "http://127.0.0.1:18787")).toBe(true); expect(copied).not.toContain(PASSPHRASE); expect(copied).not.toContain("PRIVATE KEY"); expect((await page.evaluate(() => window.__canvasText.join("\n")))).not.toContain(PASSPHRASE);
   await expect(page.locator("#served-commit")).toHaveText("a".repeat(40)); await expect(page.locator(`footer code:has-text("${WORKER_DID}")`)).toBeVisible(); expect(await page.locator('a[href="https://x.com/amjawaeth"]').count()).toBe(1); expect(await page.locator('a[href="https://x.com/flop_labs"]').count()).toBe(1);
 });
 
@@ -73,20 +87,19 @@ test("requested file preserves absent and unavailable semantics", async ({ page,
   await page.route("**/api/reply-baseline", (route) => route.fulfill({ json: { reply_after: 3 } }));
   await page.route("**/api/technocore/request", async (route) => {
     const body = route.request().postDataJSON(); const request = JSON.parse(body.text); submission += 1;
-    jobs.set(request.job, { request, hash: createHash("sha256").update(body.text).digest("hex"), sequence: 20 + submission, status: submission === 1 ? "NOT_FOUND" : "UNAVAILABLE" });
+    jobs.set(request.job, { request, hash: createHash("sha256").update(body.text).digest("hex"), sequence: 20 + submission, status: submission === 3 ? "UNAVAILABLE" : "NOT_FOUND" });
     await route.fulfill({ json: { posted: { seq: 20 + submission, from: did, text: body.text } } });
   });
   await page.route("**/api/jobs/**", (route) => {
     const job = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop()); const item = jobs.get(job);
-    return route.fulfill({ json: { result: { capability: "contribution-verify", checks: { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: item.status, path: "missing.txt" } }, job, request: { did, room: "mb-technocore-worker", seq: item.sequence, sha256: item.hash, reply_after: 3 }, status: "completed", v: "tc-worker/v2", worker: WORKER_DID } } });
+    const failed = item.sequence === 21; return route.fulfill({ json: { result: { capability: "contribution-verify", checks: { repository: { status: failed ? "NOT_FOUND" : "CONFIRMED" }, commit: { status: failed ? "NOT_CHECKED" : "CONFIRMED" }, requested_file: { status: failed ? "NOT_CHECKED" : item.status, path: "missing.txt" } }, job, request: { did, room: "mb-technocore-worker", seq: item.sequence, sha256: item.hash, reply_after: 3 }, status: "completed", v: "tc-worker/v2", worker: WORKER_DID } } });
   });
   page.on("dialog", (dialog) => dialog.accept());
-  for (const expected of ["NOT_FOUND", "UNAVAILABLE"]) {
+  for (const expected of ["FAILED", "NOT_FOUND", "UNAVAILABLE"]) {
     await page.locator("#example").click(); await page.locator("#path").fill("missing.txt"); await page.locator("#send").click();
-    await expect(page.locator("#result-file")).toHaveText(expected);
-    if (expected === "UNAVAILABLE") await expect(page.locator("#result-file")).toHaveClass("secondary");
-    else await expect(page.locator("#result-file")).not.toHaveClass("secondary");
-    if (expected === "NOT_FOUND") await page.locator("#check-another").click();
+    if (expected === "FAILED") { await expect(page.locator("#shareable-receipt")).toBeHidden(); await expect(page.locator("#neutral-result")).toBeVisible(); await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND"); }
+    else { await expect(page.locator("#shareable-receipt")).toBeVisible(); await expect(page.locator("#result-file")).toHaveText(expected); if (expected === "UNAVAILABLE") await expect(page.locator("#result-file")).toHaveClass("secondary"); else await expect(page.locator("#result-file")).not.toHaveClass("secondary"); }
+    if (expected !== "UNAVAILABLE") await page.locator("#check-another").click();
   }
 });
 
@@ -107,7 +120,7 @@ test("browser timeout does not resubmit the Technocore job", async ({ page, brow
 });
 
 test("mobile layout fits and JavaScript-disabled message is useful", async ({ browser }) => {
-  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mobile = await mobileContext.newPage(); const did = await createIdentity(mobile); await mockV2Reply(mobile, did, {}, { baseline: 0, sequence: 1, wait: true }); await mobile.locator("#example").click(); mobile.once("dialog", (dialog) => dialog.accept()); await mobile.locator("#send").click(); await expect(mobile.locator("#checking")).toBeVisible(); expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await mobileContext.close();
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mobile = await mobileContext.newPage(); const did = await createIdentity(mobile); await mockV2Reply(mobile, did, { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 1 }); await mobile.locator("#example").click(); mobile.once("dialog", (dialog) => dialog.accept()); await mobile.locator("#send").click(); await expect(mobile.locator("#shareable-receipt")).toBeVisible(); expect(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await expect(mobile.locator("#receipt-repository")).toBeVisible(); await expect(mobile.locator("#copy-receipt")).toBeVisible(); await mobileContext.close();
   const reduced = await browser.newContext({ reducedMotion: "reduce" }); const reducedPage = await reduced.newPage(); await reducedPage.goto("/"); expect(await reducedPage.locator(".activity i").first().evaluate((node) => getComputedStyle(node).animationName)).toBe("none"); await reduced.close();
   const noJs = await browser.newContext({ javaScriptEnabled: false }); const page = await noJs.newPage(); await page.goto("/"); await expect(page.locator(".noscript")).toContainText("identity creation and signing happen locally"); await noJs.close();
 });
