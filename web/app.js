@@ -57,9 +57,9 @@ function showIdentity() {
 }
 byId("create").addEventListener("click", async () => {
   try {
-    const passphrase = byId("new-passphrase").value; if (passphrase.length < 12) throw new Error("Use a passphrase of at least 12 characters."); if (passphrase !== byId("confirm-passphrase").value) throw new Error("Passphrases do not match.");
+    const passphrase = byId("new-passphrase").value; if (passphrase.length < 12) throw new Error("Use a passphrase of at least 12 characters.");
     privateKey = (await generateIdentity()).privateKey; did = await didFromPrivateKey(privateKey); const pem = await exportEncryptedPem(privateKey, passphrase); revokePemBlobUrl(); pemBlobUrl = URL.createObjectURL(new Blob([pem], { type: "application/x-pem-file" }));
-    byId("download").href = pemBlobUrl; byId("download").hidden = false; downloaded = false; byId("new-passphrase").value = ""; byId("confirm-passphrase").value = ""; showIdentity();
+    byId("download").href = pemBlobUrl; byId("download").hidden = false; downloaded = false; byId("new-passphrase").value = ""; showIdentity();
   } catch (error) { status(error.message, "error"); }
 });
 byId("download").addEventListener("click", () => { downloaded = true; byId("backup-note").hidden = false; byId("backup-note").textContent = "✓ Encrypted backup downloaded"; byId("download").hidden = true; status("Encrypted identity.pem downloaded", "ok"); setTimeout(revokePemBlobUrl, 0); });

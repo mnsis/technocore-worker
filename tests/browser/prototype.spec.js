@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 const PASSPHRASE = "headless compatibility passphrase";
 const WORKER_DID = "did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM";
 async function createIdentity(page) {
-  await page.goto("/"); await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#confirm-passphrase").fill(PASSPHRASE); await page.locator("#create").click();
+  await page.goto("/"); await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#create").click();
   await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated", { timeout: 15000 }); return page.locator("#did").textContent();
 }
 
@@ -29,7 +29,7 @@ async function mockV2Reply(page, did, checks, { baseline = 12, sequence = 7, wai
 
 test("gates checking on proof and valid fields with inline errors", async ({ page }) => {
   await page.goto("/"); await expect(page.locator("#send")).toBeDisabled();
-  await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#confirm-passphrase").fill(PASSPHRASE); await page.locator("#create").click(); await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated");
+  await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#create").click(); await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated");
   await expect(page.locator("#identity-setup")).toBeHidden(); await expect(page.locator("#identity-ready")).toBeVisible(); await expect(page.locator("#control-stage")).toHaveClass(/completed/); await expect(page.locator("#prove")).toBeHidden(); await expect(page.locator("#send")).toBeDisabled();
   await page.locator("#repository").fill("invalid repository"); await expect(page.locator("#repository-error")).toHaveText("Use owner/repository format."); await expect(page.locator("#status")).toHaveText("DID control demonstrated"); await expect(page.locator("#send")).toBeDisabled();
   await page.locator("#repository").fill("owner/repository"); await page.locator("#commit").fill("abc123"); await expect(page.locator("#commit-error")).toHaveText("Enter the full 40-character commit SHA."); await expect(page.locator("#send")).toBeDisabled();
