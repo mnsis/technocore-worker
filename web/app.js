@@ -126,7 +126,6 @@ for (const button of document.querySelectorAll(".copy-value")) button.addEventLi
 byId("contribution").addEventListener("submit", async (event) => {
   event.preventDefault(); try {
     if (!validateContribution(true)) return; const repository = byId("repository").value.trim(); const commit = byId("commit").value.trim(); const path = byId("path").value.trim();
-    if (!downloaded && !confirm("You have not downloaded identity.pem. Continue without a recoverable encrypted copy?")) return;
     signalActivity();
     byId("github-form-wrap").hidden = true; byId("checking").hidden = false; byId("checking-repository").textContent = repository; byId("checking-commit").textContent = commit; const started = performance.now(); document.body.classList.add("job-active"); document.querySelector(".workspace").classList.add("job-active"); byId("download").textContent = "Download backup"; setProgress("result", ["identity", "control", "github"]); startElapsed(started); status("Preparing signed request");
     const baselineResponse = await fetch("/api/reply-baseline", { headers: { Accept: "application/json" }, cache: "no-store" }); if (!baselineResponse.ok) throw new Error("Worker reply service is temporarily unavailable."); const baseline = await baselineResponse.json(); const replyAfter = baseline.reply_after;
