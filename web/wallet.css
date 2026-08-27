@@ -1,2 +1,61 @@
-.wallet-utility{max-width:760px;margin:22px auto 0;padding:20px 24px;border-top:1px solid #202936;color:#dce5f0}.wallet-heading{display:flex;justify-content:space-between;gap:20px}.wallet-heading .kicker{margin-bottom:2px}.wallet-heading h2{font-size:1.08rem}.wallet-heading p{margin:4px 0 0;color:var(--muted);font-size:.76rem}.wallet-separate{white-space:nowrap;color:#738095!important}.wallet-empty{margin-top:15px}.wallet-ready{margin-top:17px}.wallet-address-row{display:flex;align-items:center;gap:12px}.wallet-address-row>div{min-width:0;flex:1}.wallet-label{display:block;color:#7f8da0;font-size:.68rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}.wallet-address{display:block;margin-top:3px;color:#dce8f3;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wallet-button{border:1px solid #344153;border-radius:8px;background:#171e29;color:#dce5f0;padding:8px 13px;cursor:pointer}.wallet-button:hover{border-color:#52647b}.wallet-recovery{margin-top:17px;padding-top:15px;border-top:1px solid #202936}.wallet-recovery-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.wallet-hidden{color:#6f7c8f;font:600 .7rem ui-monospace,monospace}.wallet-warning{margin:12px 0 8px;color:#e6b968;font-size:.78rem}.wallet-ack{display:flex;align-items:flex-start;gap:8px;color:#a9b5c4;font-size:.76rem}.wallet-confirm-actions,.wallet-phrase-actions{display:flex;align-items:center;gap:10px;margin-top:10px}.wallet-words{display:grid;grid-template-columns:repeat(4,1fr);gap:7px 14px;margin:13px 0;padding:0;list-style:none}.wallet-words li{display:flex;align-items:baseline;gap:7px;min-width:0}.wallet-words span{width:16px;color:#657286;font:500 .65rem ui-monospace,monospace;text-align:right}.wallet-words strong{font:600 .8rem ui-monospace,monospace;color:#e3ebf5}.wallet-save-note{margin:12px 0;color:#a7b2c1;font-size:.77rem}.wallet-saved-state{color:var(--green);font-size:.77rem}.wallet-footer{display:flex;align-items:center;justify-content:space-between;margin-top:15px}.wallet-feedback{min-height:1.1em;margin:0;color:var(--green);font-size:.72rem}.wallet-status{margin:0;color:#748195;font-size:.7rem}.wallet-utility button:focus-visible,.wallet-utility input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}@media(max-width:640px){.wallet-utility{margin-top:16px;padding:18px 8px}.wallet-heading{display:block}.wallet-separate{margin-top:7px!important}.wallet-address-row{align-items:stretch;flex-direction:column}.wallet-address{font-size:.74rem}.wallet-address-row button{align-self:flex-start}.wallet-words{grid-template-columns:repeat(3,1fr);gap:9px 7px}.wallet-recovery-head{align-items:flex-start;flex-direction:column}.wallet-confirm-actions,.wallet-phrase-actions{align-items:stretch;flex-direction:column}.wallet-confirm-actions button,.wallet-phrase-actions button{width:100%}.wallet-footer{align-items:flex-start;flex-direction:column;gap:9px}}
-.wallet-risks{margin-top:9px}.wallet-risks p{max-width:680px;margin:7px 0 0}.wallet-utility summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* Technocore Worker — optional EVM wallet
+   Secondary utility. Visually separated from the primary flow, never advertised.
+   Secrets are handled entirely by wallet-ui.js in page memory. */
+
+.wallet { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.wallet-head { max-width: 54ch; }
+.wallet-head .eyebrow { color: var(--fg-faint); }
+.wallet-head h2 { margin-top: 8px; font-size: 1rem; font-weight: 600; letter-spacing: -.015em; }
+.wallet-head .muted { margin-top: 7px; font-size: .8rem; line-height: 1.55; }
+
+.wallet-empty { margin-top: 16px; }
+
+.wallet-ready {
+  margin-top: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 15px;
+  padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--inset);
+  overflow: hidden;
+}
+#wallet-phrase { display: grid; gap: 12px; }
+#wallet-phrase .micro { margin: 0; }
+.wallet-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; min-width: 0; }
+.wallet-field { min-width: 0; flex: 1; }
+#wallet-address {
+  display: block; margin-top: 5px; min-width: 0; max-width: 100%; color: var(--fg); font-size: .82rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.wallet-recovery { border-top: 1px solid var(--line); padding-top: 15px; display: grid; gap: 12px; min-width: 0; }
+.wallet-recovery-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.wallet-recovery-labels { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.mono-mini { color: var(--fg-faint); font: 600 .67rem/1 var(--mono); letter-spacing: .07em; }
+.ok-mini { color: var(--ok); font-size: .74rem; }
+
+#wallet-reveal-confirm {
+  display: grid; gap: 10px; padding: 13px; border: 1px solid var(--line-2); border-radius: var(--radius-sm); background: var(--bg-raise);
+}
+#wallet-reveal-confirm .note { margin-top: 0; }
+.ack { display: flex; align-items: flex-start; gap: 9px; color: var(--fg-muted); font-size: .78rem; line-height: 1.45; cursor: pointer; }
+.ack input { margin-top: 2px; flex: none; }
+
+.wallet-btn-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.wallet-words {
+  list-style: none; margin: 4px 0; padding: 0;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px 14px;
+}
+.wallet-words li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.wallet-words span { flex: none; width: 15px; text-align: right; color: var(--fg-faint); font: 500 .64rem/1 var(--mono); }
+.wallet-words strong { font: 600 .8rem/1.3 var(--mono); color: var(--fg); overflow-wrap: anywhere; }
+
+.wallet-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#wallet-status { margin-top: 12px; }
+#wallet-status:empty { display: none; }
+
+@media (max-width: 560px) {
+  .wallet-row { flex-direction: column; align-items: stretch; }
+  .wallet-row .btn { align-self: flex-start; }
+  .wallet-words { grid-template-columns: repeat(3, 1fr); gap: 10px 8px; }
+}
+@media (max-width: 360px) {
+  .wallet-words { grid-template-columns: repeat(2, 1fr); }
+}

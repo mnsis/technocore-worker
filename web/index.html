@@ -5,121 +5,228 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
-  <meta name="theme-color" content="#080b11">
+  <meta name="theme-color" content="#0a0d12">
   <title>Technocore Worker</title>
   <link rel="icon" href="mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="app.css">
-  <link rel="stylesheet" href="result.css">
   <link rel="stylesheet" href="receipt.css">
   <link rel="stylesheet" href="wallet.css">
-  <link rel="stylesheet" href="state.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
-  <noscript><div class="noscript">JavaScript is required because identity creation and signing happen locally in your browser.</div></noscript>
+  <noscript><div class="noscript">JavaScript is required: identity creation and signing happen locally in your browser.</div></noscript>
   <div class="shell">
-    <header>
-      <a class="brand" href="/"><img src="mark.svg" width="30" height="30" alt=""><strong>Technocore Worker</strong></a>
-      <nav><span class="live"><i></i> LIVE</span><a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">Source</a></nav>
+    <header class="site-header">
+      <a class="brand" href="/"><img src="mark.svg" width="26" height="26" alt=""><span>Technocore&nbsp;Worker</span></a>
+      <div class="header-meta">
+        <span class="live"><i aria-hidden="true"></i>Live</span>
+        <a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">Source</a>
+      </div>
     </header>
 
-    <main>
-      <div class="intro">
-        <h1>Create a Technocore identity<br>and check a GitHub commit.</h1>
-        <p>Keys stay in your browser. Checks run through Technocore.</p>
-      </div>
+    <main class="layout">
+      <aside class="rail">
+        <ol class="flow" aria-label="Progress">
+          <li data-stage="identity" class="current"><span>Identity</span></li>
+          <li data-stage="control"><span>DID control</span></li>
+          <li data-stage="github"><span>GitHub check</span></li>
+          <li data-stage="result"><span>Result</span></li>
+        </ol>
+      </aside>
 
-      <ol class="flow" aria-label="Progress">
-        <li data-stage="identity" class="current"><span>Identity</span></li>
-        <li data-stage="control"><span>DID control</span></li>
-        <li data-stage="github"><span>GitHub</span></li>
-        <li data-stage="result"><span>Result</span></li>
-      </ol>
+      <div class="content">
+        <div class="intro">
+          <h1>Create a Technocore identity, then check a GitHub commit.</h1>
+          <p>Keys are generated and used only in this browser. Checks run through Technocore.</p>
+        </div>
 
-      <section class="workspace">
         <p id="status" class="sr-only" role="status" aria-live="polite">Create or import an identity to begin.</p>
 
-        <div id="identity-stage">
-          <div id="identity-setup">
-            <div class="workspace-head"><div><p class="kicker">Identity</p><h2>Choose how to begin</h2></div><p class="key-note">Private key stays in this browser.</p></div>
-            <div class="choice-tabs" role="tablist" aria-label="Identity action">
-              <button id="show-create" class="tab active" type="button" role="tab" aria-selected="true">Create identity</button>
-              <button id="show-import" class="tab" type="button" role="tab" aria-selected="false">Import identity.pem</button>
+        <section class="workspace">
+          <div id="identity-stage">
+            <div id="identity-setup">
+              <div class="seg" role="tablist" aria-label="Identity action">
+                <button id="show-create" class="seg-btn active" type="button" role="tab" aria-selected="true">Create</button>
+                <button id="show-import" class="seg-btn" type="button" role="tab" aria-selected="false">Import identity.pem</button>
+              </div>
+              <form id="create-panel" class="panel" autocomplete="off">
+                <label class="field">
+                  <span class="field-label">Passphrase <small>12+ characters</small></span>
+                  <input id="new-passphrase" type="password" minlength="12" autocomplete="new-password">
+                </label>
+                <p class="field-hint">Encrypts your <code>identity.pem</code> backup. Never sent anywhere.</p>
+                <button id="create" class="btn btn-primary" type="button">Create identity</button>
+              </form>
+              <form id="import-panel" class="panel" autocomplete="off" hidden>
+                <div class="field-row">
+                  <label class="field"><span class="field-label">identity.pem</span><input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label>
+                  <label class="field"><span class="field-label">Passphrase</span><input id="import-passphrase" type="password" autocomplete="current-password"></label>
+                </div>
+                <p class="note warn">Use a Technocore identity.pem only. Never enter a wallet seed phrase or wallet private key.</p>
+                <button id="import" class="btn btn-primary" type="button">Import locally</button>
+              </form>
+              <details class="disclose"><summary>How does this work?</summary><p>Keys are generated, imported, and used in browser memory. No key, PEM, or passphrase is sent to the server or stored in browser storage. Reloading clears the identity. A compromised browser, origin, or extension remains part of the trust boundary.</p></details>
             </div>
-            <form id="create-panel" class="identity-form" autocomplete="off">
-              <div class="fields"><label>Passphrase <small>12+ characters</small><input id="new-passphrase" type="password" minlength="12" autocomplete="new-password"></label></div>
-              <button id="create" class="primary" type="button">Create identity</button>
-            </form>
-            <form id="import-panel" class="identity-form" autocomplete="off" hidden>
-              <div class="fields two"><label>Technocore identity.pem<input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label><label>Passphrase<input id="import-passphrase" type="password" autocomplete="current-password"></label></div>
-              <p class="warning">Use a Technocore identity.pem only. Never enter a wallet seed phrase or wallet private key.</p>
-              <button id="import" class="primary" type="button">Import locally</button>
-            </form>
-            <details><summary>How does this work?</summary><p>Keys are generated, imported, and used in browser memory. No key, PEM, or passphrase is sent to the server or stored in browser storage. Reloading clears the identity. A compromised browser, origin, or extension remains part of the trust boundary.</p></details>
+
+            <div id="identity-ready" class="ready-row" hidden>
+              <span class="tick" aria-hidden="true">&#10003;</span>
+              <div class="ready-main">
+                <strong>Identity ready</strong>
+                <code id="did"></code>
+                <p id="backup-note" class="hint">Save your encrypted backup before leaving.</p>
+              </div>
+              <div class="ready-actions">
+                <a id="download" class="btn btn-primary" download="identity.pem" hidden>Download identity.pem</a>
+                <button id="use-another" class="btn btn-ghost" type="button">Use another identity</button>
+              </div>
+            </div>
           </div>
 
-          <div id="identity-ready" class="summary identity-summary" hidden>
-            <span class="check">✓</span><div class="summary-main"><strong>Identity ready</strong><code id="did"></code><p id="backup-note">Save your encrypted backup before leaving.</p></div>
-            <div class="summary-actions"><a id="download" class="primary download" download="identity.pem" hidden>Download identity.pem</a><button id="use-another" class="quiet" type="button">Use another identity</button></div>
-          </div>
-        </div>
-
-        <div id="control-stage" class="summary control-summary" hidden>
-          <span id="control-icon" class="spinner" aria-hidden="true"></span><div class="summary-main"><strong>DID control</strong><p id="proof-result" aria-live="polite">Signing local challenge…</p></div>
-          <button id="prove" type="button" hidden>Demonstrate DID control</button>
-        </div>
-
-        <div id="github-stage" hidden>
-          <div id="github-form-wrap">
-            <div class="workspace-head"><div><p class="kicker">GitHub commit</p><h2>What should the worker check?</h2></div></div>
-            <form id="contribution" novalidate><fieldset id="contribution-fields" disabled>
-              <div class="fields"><label>Repository <small>owner/repository</small><input id="repository" placeholder="owner/repository" spellcheck="false"><p id="repository-error" class="field-error" role="alert" hidden>Use owner/repository format.</p></label><label>Commit SHA <small>40-character SHA</small><input id="commit" minlength="40" maxlength="40" placeholder="0123456789abcdef…" spellcheck="false"><p id="commit-error" class="field-error" role="alert" hidden>Enter the full 40-character commit SHA.</p></label><label>File path <small>optional</small><input id="path" maxlength="240" placeholder="docs/guide.md" spellcheck="false"><p id="path-error" class="field-error" role="alert" hidden>Use a valid relative path.</p></label></div>
-              <div class="form-actions"><button id="send" class="primary" type="submit" disabled>Check repo &amp; commit</button><button id="example" class="quiet" type="button">Try example</button></div>
-            </fieldset></form>
+          <div id="control-stage" class="proc-row control-summary" hidden>
+            <span id="control-icon" class="spinner" aria-hidden="true"></span>
+            <div class="proc-main"><strong>DID control</strong><p id="proof-result" aria-live="polite">Signing local challenge&#8230;</p></div>
+            <button id="prove" class="btn btn-ghost" type="button" hidden>Demonstrate DID control</button>
           </div>
 
-          <div id="checking" hidden>
-            <p class="kicker">Checking</p>
-            <div class="job-layout"><div class="job-target"><h2 id="checking-repository"></h2><code id="checking-commit"></code></div>
-            <ol id="execution" class="execution" aria-live="polite"><li data-step="signed">Request signed</li><li data-step="sent">Sent to Technocore</li><li data-step="waiting"><span class="activity" aria-hidden="true"><i></i><i></i><i></i></span><span>Waiting for worker</span><time id="waiting-elapsed">0.0s</time></li></ol></div>
-          </div>
-        </div>
+          <div id="github-stage" hidden>
+            <div id="github-form-wrap">
+              <div class="stage-head">
+                <p class="eyebrow">GitHub check</p>
+                <h2>What should the worker check?</h2>
+              </div>
+              <form id="contribution" novalidate><fieldset id="contribution-fields" disabled>
+                <div class="field-grid">
+                  <label class="field">
+                    <span class="field-label">Repository <small>owner/repository</small></span>
+                    <input id="repository" placeholder="owner/repository" spellcheck="false">
+                    <p id="repository-error" class="field-error" role="alert" hidden>Use owner/repository format.</p>
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Commit SHA <small>40 characters</small></span>
+                    <input id="commit" minlength="40" maxlength="40" placeholder="0123456789abcdef&#8230;" spellcheck="false">
+                    <p id="commit-error" class="field-error" role="alert" hidden>Enter the full 40-character commit SHA.</p>
+                  </label>
+                  <label class="field field-optional">
+                    <span class="field-label">File path <small>optional</small></span>
+                    <input id="path" maxlength="240" placeholder="docs/guide.md" spellcheck="false">
+                    <p id="path-error" class="field-error" role="alert" hidden>Use a valid relative path.</p>
+                  </label>
+                </div>
+                <div class="actions">
+                  <button id="send" class="btn btn-primary" type="submit" disabled>Check repo &amp; commit</button>
+                  <button id="example" class="btn btn-ghost" type="button">Try example</button>
+                </div>
+              </fieldset></form>
+            </div>
 
-        <div id="result-stage" hidden>
-          <div id="shareable-receipt" class="receipt-artifact" hidden>
-            <div class="receipt-title"><span class="receipt-wordmark">TECHNOCORE WORKER</span><span id="receipt-id" class="receipt-id"></span></div>
-            <p class="receipt-kicker">GitHub commit checked</p>
-            <div class="receipt-target"><strong id="receipt-repository"></strong><code id="receipt-commit"></code></div>
-            <div class="receipt-checks"><div><span><i aria-hidden="true">✓</i> Repository</span><strong id="result-repository"></strong></div><div><span><i aria-hidden="true">✓</i> Commit</span><strong id="result-commit"></strong></div><div><span><i aria-hidden="true"></i> File</span><strong id="result-file"></strong></div></div>
-            <div class="receipt-through"><span>Checked through Technocore</span><time id="result-time"></time></div>
-            <div class="receipt-share" aria-label="Receipt actions"><div class="download-group"><button id="download-receipt" class="primary" type="button">Download receipt</button><label class="image-option"><span>Include my DID</span><input id="include-did-image" type="checkbox" role="switch" checked><i aria-hidden="true"></i></label></div><button id="share-x" class="secondary-action" type="button">Share on X</button><button id="copy-receipt" class="quiet-action" type="button">Copy</button></div>
-            <p id="share-feedback" class="share-feedback" role="status" aria-live="polite"></p>
-            <details id="provenance" class="receipt-provenance"><summary>View provenance</summary><div class="provenance-grid"><div><span>Requester DID</span><code id="result-requester"></code><button class="copy-value" type="button" data-copy-target="result-requester">Copy</button></div><div><span>Worker DID</span><code id="result-worker"></code><button class="copy-value" type="button" data-copy-target="result-worker">Copy</button></div><div><span>Full commit SHA</span><code id="provenance-commit"></code></div><div><span>Request sequence</span><code id="provenance-sequence"></code></div><div><span>Request digest</span><code id="provenance-digest"></code></div><div><span>Protocol</span><code id="provenance-version"></code></div></div><p>Receipt ID uses the first eight hexadecimal characters of the bound request SHA-256, uppercased and grouped 4-4. It is a display identifier only.</p></details>
-            <p class="receipt-scope">Confirms only the repository and commit facts shown here. It does not establish authorship, ownership, contribution quality, FLOP eligibility, token allocation, or endorsement.</p>
+            <div id="checking" hidden>
+              <div class="stage-head"><p class="eyebrow">Checking</p></div>
+              <div class="job">
+                <div class="job-target"><h2 id="checking-repository"></h2><code id="checking-commit"></code></div>
+                <ol id="execution" class="execution" aria-live="polite">
+                  <li data-step="signed">Request signed</li>
+                  <li data-step="sent">Sent to Technocore</li>
+                  <li data-step="waiting"><span class="activity" aria-hidden="true"><i></i><i></i><i></i></span><span>Waiting for worker</span><time id="waiting-elapsed">0.0s</time></li>
+                </ol>
+              </div>
+            </div>
           </div>
-          <div id="neutral-result" class="neutral-result" hidden><div class="receipt-head"><div><p class="kicker">Result</p><h2>Check complete</h2></div><span id="neutral-result-time" class="response-time"></span></div><div class="receipt-rows"><div><span>Repository</span><strong id="neutral-repository"></strong></div><div><span>Commit</span><strong id="neutral-commit"></strong></div><div><span>File</span><strong id="neutral-file"></strong></div></div><p class="scope-note">The worker did not confirm both repository and commit facts. UNAVAILABLE is indeterminate, not a failed contribution check.</p></div>
-          <div class="receipt-footer-actions"><button id="check-another" class="quiet" type="button">Check another commit</button><details><summary>Detailed limitations</summary><p>This is a best-effort community service with no uptime guarantee. GitHub availability or rate limits may produce UNAVAILABLE, which is not a failed contribution check.</p></details></div>
-          <canvas id="receipt-canvas" width="1200" height="675" hidden aria-label="Generated receipt image"></canvas>
-        </div>
-      </section>
 
-      <section id="wallet-section" class="wallet-utility" aria-labelledby="wallet-title">
-        <div class="wallet-heading"><div><p class="kicker">Optional</p><h2 id="wallet-title">EVM wallet</h2><p>Create a standard EVM wallet locally in this browser.</p></div><p class="wallet-separate">Separate from your Technocore DID.</p></div>
-        <div id="wallet-empty" class="wallet-empty"><button id="wallet-create" class="wallet-button" type="button">Create wallet</button></div>
-        <div id="wallet-ready" class="wallet-ready" hidden>
-          <div class="wallet-address-row"><div><span class="wallet-label">EVM address</span><code id="wallet-address" class="wallet-address"></code></div><button id="wallet-copy-address" class="wallet-button" type="button">Copy address</button></div>
-          <div class="wallet-recovery"><div class="wallet-recovery-head"><div><span class="wallet-label">Recovery phrase</span><span id="wallet-saved-state" class="wallet-saved-state" hidden>✓ Marked as saved</span><span id="wallet-visibility" class="wallet-hidden">Hidden</span></div><button id="wallet-reveal" class="quiet" type="button">Reveal recovery phrase</button></div>
-            <div id="wallet-reveal-confirm" hidden><p class="wallet-warning">Anyone with these 12 words can control this wallet.</p><label class="wallet-ack"><input id="wallet-acknowledge" type="checkbox"> I understand that revealing or copying these words can expose the wallet.</label><div class="wallet-confirm-actions"><button id="wallet-confirm-reveal" class="wallet-button" type="button" disabled>Reveal 12 words</button></div></div>
-            <div id="wallet-phrase" hidden><ol id="wallet-phrase-list" class="wallet-words"></ol><p class="wallet-save-note">This site does not save your recovery phrase. If you lose these words, this wallet cannot be recovered here.</p><div class="wallet-phrase-actions"><button id="wallet-copy-phrase" class="wallet-button" type="button">Copy recovery phrase</button><button id="wallet-saved" class="quiet" type="button">I've saved my recovery phrase</button></div></div>
+          <div id="result-stage" hidden>
+            <div id="shareable-receipt" class="receipt" hidden>
+              <div class="receipt-top"><span class="receipt-mark">TECHNOCORE WORKER</span><span id="receipt-id" class="receipt-id"></span></div>
+              <p class="eyebrow">GitHub commit checked</p>
+              <div class="receipt-target"><strong id="receipt-repository"></strong><code id="receipt-commit"></code></div>
+              <div class="receipt-checks">
+                <div class="rc"><span><i aria-hidden="true">&#10003;</i>Repository</span><strong id="result-repository"></strong></div>
+                <div class="rc"><span><i aria-hidden="true">&#10003;</i>Commit</span><strong id="result-commit"></strong></div>
+                <div class="rc"><span><i aria-hidden="true"></i>File</span><strong id="result-file"></strong></div>
+              </div>
+              <div class="receipt-through"><span>Checked through Technocore</span><time id="result-time"></time></div>
+              <div class="receipt-actions" aria-label="Receipt actions">
+                <button id="download-receipt" class="btn btn-primary btn-lg" type="button">Download receipt</button>
+                <div class="receipt-minor">
+                  <button id="share-x" class="btn btn-outline" type="button">Share on X</button>
+                  <button id="copy-receipt" class="btn btn-quiet" type="button">Copy</button>
+                  <label class="switch"><input id="include-did-image" type="checkbox" role="switch" checked><i aria-hidden="true"></i><span>Include my DID</span></label>
+                </div>
+              </div>
+              <p id="share-feedback" class="feedback" role="status" aria-live="polite"></p>
+              <details id="provenance" class="disclose provenance"><summary>View provenance</summary>
+                <div class="prov-grid">
+                  <div><span>Requester DID</span><code id="result-requester"></code><button class="copy-value" type="button" data-copy-target="result-requester">Copy</button></div>
+                  <div><span>Worker DID</span><code id="result-worker"></code><button class="copy-value" type="button" data-copy-target="result-worker">Copy</button></div>
+                  <div><span>Full commit SHA</span><code id="provenance-commit"></code></div>
+                  <div><span>Request sequence</span><code id="provenance-sequence"></code></div>
+                  <div><span>Request digest</span><code id="provenance-digest"></code></div>
+                  <div><span>Protocol</span><code id="provenance-version"></code></div>
+                </div>
+                <p class="micro">Receipt ID uses the first eight hexadecimal characters of the bound request SHA-256, uppercased and grouped 4-4. It is a display identifier only.</p>
+              </details>
+              <p class="receipt-scope micro">Confirms only the repository and commit facts shown here. It does not establish authorship, ownership, contribution quality, FLOP eligibility, token allocation, or endorsement.</p>
+            </div>
+
+            <div id="neutral-result" class="neutral-result" hidden>
+              <div class="stage-head"><p class="eyebrow">Result</p><h2>Check complete</h2><span id="neutral-result-time" class="muted-time"></span></div>
+              <div class="receipt-checks">
+                <div class="rc"><span>Repository</span><strong id="neutral-repository"></strong></div>
+                <div class="rc"><span>Commit</span><strong id="neutral-commit"></strong></div>
+                <div class="rc"><span>File</span><strong id="neutral-file"></strong></div>
+              </div>
+              <p class="micro">The worker did not confirm both repository and commit facts. UNAVAILABLE is indeterminate, not a failed contribution check.</p>
+            </div>
+
+            <div class="result-foot">
+              <button id="check-another" class="btn btn-ghost" type="button">Check another commit</button>
+              <details class="disclose"><summary>Detailed limitations</summary><p>This is a best-effort community service with no uptime guarantee. GitHub availability or rate limits may produce UNAVAILABLE, which is not a failed contribution check.</p></details>
+            </div>
+            <canvas id="receipt-canvas" width="1200" height="675" hidden aria-label="Generated receipt image"></canvas>
           </div>
-          <div class="wallet-footer"><button id="wallet-create-another" class="quiet" type="button">Create another wallet</button><p id="wallet-feedback" class="wallet-feedback" role="status" aria-live="polite"></p></div>
-        </div>
-        <p id="wallet-status" class="wallet-status" role="status" aria-live="polite"></p>
-        <details class="wallet-risks"><summary>Browser wallet risks</summary><p>Served JavaScript, browser extensions, and clipboard tools can access information you reveal. Wallet data remains in browser memory until this page is closed or reloaded, and JavaScript cannot guarantee complete memory erasure.</p></details>
-      </section>
+        </section>
+
+        <section id="wallet-section" class="wallet" aria-labelledby="wallet-title">
+          <div class="wallet-head">
+            <p class="eyebrow">Optional utility</p>
+            <h2 id="wallet-title">EVM wallet</h2>
+            <p class="muted">A standard EVM wallet generated locally in this browser. Separate from your Technocore DID &#8212; not a FLOP wallet, and not required for Technocore or FLOP.</p>
+          </div>
+          <div id="wallet-empty" class="wallet-empty"><button id="wallet-create" class="btn btn-outline" type="button">Create wallet</button></div>
+          <div id="wallet-ready" class="wallet-ready" hidden>
+            <div class="wallet-row">
+              <div class="wallet-field"><span class="field-label">EVM address</span><code id="wallet-address"></code></div>
+              <button id="wallet-copy-address" class="btn btn-outline btn-sm" type="button">Copy address</button>
+            </div>
+            <div class="wallet-recovery">
+              <div class="wallet-recovery-head">
+                <div class="wallet-recovery-labels"><span class="field-label">Recovery phrase</span><span id="wallet-saved-state" class="ok-mini" hidden>&#10003; Marked as saved</span><span id="wallet-visibility" class="mono-mini">Hidden</span></div>
+                <button id="wallet-reveal" class="btn btn-ghost btn-sm" type="button">Reveal recovery phrase</button>
+              </div>
+              <div id="wallet-reveal-confirm" hidden>
+                <p class="note warn">Anyone with these 12 words can control this wallet.</p>
+                <label class="ack"><input id="wallet-acknowledge" type="checkbox"><span>I understand that revealing or copying these words can expose the wallet.</span></label>
+                <div class="wallet-btn-row"><button id="wallet-confirm-reveal" class="btn btn-outline" type="button" disabled>Reveal 12 words</button></div>
+              </div>
+              <div id="wallet-phrase" hidden>
+                <ol id="wallet-phrase-list" class="wallet-words"></ol>
+                <p class="micro">This site does not save your recovery phrase. If you lose these words, this wallet cannot be recovered here.</p>
+                <div class="wallet-btn-row"><button id="wallet-copy-phrase" class="btn btn-outline btn-sm" type="button">Copy recovery phrase</button><button id="wallet-saved" class="btn btn-ghost" type="button">I've saved my recovery phrase</button></div>
+              </div>
+            </div>
+            <div class="wallet-foot"><button id="wallet-create-another" class="btn btn-ghost" type="button">Create another wallet</button><p id="wallet-feedback" class="feedback" role="status" aria-live="polite"></p></div>
+          </div>
+          <p id="wallet-status" class="micro" role="status" aria-live="polite"></p>
+          <details class="disclose"><summary>Browser wallet risks</summary><p>Served JavaScript, browser extensions, and clipboard tools can access information you reveal. Wallet data remains in browser memory until this page is closed or reloaded, and JavaScript cannot guarantee complete memory erasure.</p></details>
+        </section>
+      </div>
     </main>
 
-    <footer><span>Source <a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">GitHub</a> · <code id="served-commit">loading…</code></span><span>Worker <code>did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM</code></span><span>Built by <a href="https://x.com/amjawaeth" rel="external noreferrer">@amjawaeth</a> · FLOP Labs <a href="https://x.com/flop_labs" rel="external noreferrer">@flop_labs</a></span><small>Independent community project. Not affiliated with or endorsed by FLOP Labs.</small></footer>
+    <footer class="site-footer">
+      <div class="foot-line">
+        <span>Source &#183; <a href="https://github.com/mnsis/technocore-worker" rel="external noreferrer">GitHub</a> &#183; <code id="served-commit">loading&#8230;</code></span>
+        <span>Worker &#183; <code>did:key:z6MkktyZ4gpSR62gfvh71yKBonTCvqEgBt9mmiaXLPNH8djM</code></span>
+      </div>
+      <p class="foot-fine">Independent community project. Not affiliated with or endorsed by FLOP Labs. Built by <a href="https://x.com/amjawaeth" rel="external noreferrer">@amjawaeth</a> &#183; FLOP Labs <a href="https://x.com/flop_labs" rel="external noreferrer">@flop_labs</a>.</p>
+    </footer>
   </div>
   <script type="module" src="wallet-ui.js"></script>
 </body>
