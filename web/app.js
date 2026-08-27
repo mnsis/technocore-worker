@@ -64,30 +64,6 @@ byId("create").addEventListener("click", async () => {
     byId("download").href = pemBlobUrl; byId("download").hidden = false; downloaded = false; byId("new-passphrase").value = ""; showIdentity();
   } catch (error) { status(error.message, "error"); }
 });
-
-// Convenience: strong random passphrase, independent of the EVM wallet and any key material.
-// 24 characters from an unambiguous alphabet (no 0/O/1/I/l/o), grouped for readability.
-function generatePassphrase() {
-  const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
-  const limit = 256 - (256 % alphabet.length);
-  const picks = [];
-  const bytes = new Uint8Array(48);
-  while (picks.length < 24) {
-    crypto.getRandomValues(bytes);
-    for (const byte of bytes) { if (byte < limit && picks.length < 24) picks.push(alphabet[byte % alphabet.length]); }
-  }
-  return picks.join("").replace(/.{6}(?=.)/g, "$&-");
-}
-let passphraseFeedbackTimer = null;
-byId("passphrase-gen").addEventListener("click", async () => {
-  const value = generatePassphrase();
-  byId("new-passphrase").value = value;
-  let copied = false;
-  try { await copyText(value); copied = true; } catch { copied = false; }
-  clearTimeout(passphraseFeedbackTimer);
-  byId("passphrase-feedback").textContent = copied ? "Generated & copied ✓" : "Generated — copy failed";
-  passphraseFeedbackTimer = setTimeout(() => { byId("passphrase-feedback").textContent = ""; }, 3000);
-});
 byId("download").addEventListener("click", () => { downloaded = true; byId("backup-note").hidden = false; byId("backup-note").textContent = "✓ Encrypted backup downloaded"; byId("download").hidden = true; status("Encrypted identity.pem downloaded", "ok"); setTimeout(revokePemBlobUrl, 0); });
 byId("import").addEventListener("click", async () => {
   try { const file = byId("pem-file").files[0]; if (!file || file.size > 16384) throw new Error("Choose a valid identity.pem file."); privateKey = await importEncryptedPem(await file.text(), byId("import-passphrase").value); did = await didFromPrivateKey(privateKey); downloaded = true; byId("import-passphrase").value = ""; byId("download").hidden = true; showIdentity(); } catch (error) { status(error.message, "error"); }

@@ -27,62 +27,6 @@ async function mockV2Reply(page, did, checks, { baseline = 12, sequence = 7, wai
   return () => releaseReply?.();
 }
 
-test("generate & copy passphrase fills the field and clipboard with the same fresh value", async ({ page }) => {
-  await page.addInitScript(() => {
-    Math.random = () => { throw new Error("Math.random must not be used"); };
-    window.__clip = [];
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (v) => { window.__clip.push(v); } }, configurable: true });
-  });
-  const requests = [];
-  page.on("request", (r) => requests.push(r.url()));
-  await page.goto("/", { waitUntil: "networkidle" });
-  const before = requests.length;
-
-  const ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
-  await page.locator("#passphrase-gen").click();
-  const v1 = await page.locator("#new-passphrase").inputValue();
-  expect(v1).toBe(await page.evaluate(() => window.__clip.at(-1)));      // clipboard == field, exact
-  expect(v1.replace(/-/g, "").length).toBeGreaterThanOrEqual(20);         // >= 20 chars of entropy
-  expect([...v1.replace(/-/g, "")].every((c) => ALPHABET.includes(c))).toBe(true);
-  expect(v1).not.toMatch(/[01IOlo]/);                                    // no confusable characters
-  expect(v1.length).toBeGreaterThanOrEqual(12);                          // satisfies existing validation
-  await expect(page.locator("#passphrase-feedback")).toHaveText("Generated & copied ✓");
-  await expect(page.locator("#new-passphrase")).toHaveAttribute("type", "password");
-
-  await page.locator("#passphrase-gen").click();
-  const v2 = await page.locator("#new-passphrase").inputValue();
-  expect(v2).toBe(await page.evaluate(() => window.__clip.at(-1)));
-  expect(v2).not.toBe(v1);                                               // two clicks -> different values
-
-  expect(requests.length).toBe(before);                                  // zero network requests
-  expect(await page.evaluate(() => ({ l: localStorage.length, s: sessionStorage.length, cookie: document.cookie }))).toEqual({ l: 0, s: 0, cookie: "" });
-  expect(await page.evaluate(() => location.href)).toBe("http://127.0.0.1:18787/");
-
-  // identity creation still works with a generated passphrase
-  await page.locator("#create").click();
-  await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated", { timeout: 15000 });
-
-  // manual passphrase entry still works
-  await page.locator("#use-another").click();
-  await page.locator("#new-passphrase").fill("a manually typed passphrase value");
-  await page.locator("#create").click();
-  await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated", { timeout: 15000 });
-});
-
-test("passphrase generate reports an accurate failure when the clipboard is unavailable", async ({ page }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, "clipboard", { value: { writeText: async () => { throw new Error("denied"); } }, configurable: true });
-    document.execCommand = () => false;
-  });
-  await page.goto("/");
-  await page.locator("#passphrase-gen").click();
-  const filled = await page.locator("#new-passphrase").inputValue();
-  expect(filled.replace(/-/g, "").length).toBeGreaterThanOrEqual(20);    // field still filled
-  await expect(page.locator("#passphrase-feedback")).toHaveText("Generated — copy failed");
-  await page.locator("#passphrase-gen").click();                         // does not regenerate silently on failure path either
-  expect(await page.locator("#new-passphrase").inputValue()).not.toBe(filled);
-});
-
 test("gates checking on proof and valid fields with inline errors", async ({ page }) => {
   await page.goto("/"); await expect(page.locator("#send")).toBeDisabled();
   await page.locator("#new-passphrase").fill(PASSPHRASE); await page.locator("#create").click(); await expect(page.locator("#proof-result")).toHaveText("DID control demonstrated");
