@@ -159,10 +159,17 @@ body.job-active .intro,
 .field { display: block; }
 .field + .field { margin-top: 14px; }
 .field-label {
-  display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px;
+  display: flex; align-items: baseline; gap: 6px 8px; margin-bottom: 7px; flex-wrap: wrap;
   font: 700 .655rem/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--fg-muted);
 }
 .field-label small { font: 400 .68rem/1 var(--font); letter-spacing: 0; text-transform: none; color: var(--fg-faint); }
+.linkish {
+  margin-left: auto; border: 0; background: none; padding: 0; cursor: pointer;
+  color: var(--accent); font: 600 .7rem/1 var(--font); letter-spacing: 0; text-transform: none;
+}
+.linkish:hover { text-decoration: underline; }
+.gen-feedback { color: var(--ok); font: 500 .7rem/1 var(--font); letter-spacing: 0; text-transform: none; }
+.gen-feedback:empty { display: none; }
 .field input {
   width: 100%; max-width: 460px; height: 40px; padding: 0 12px;
   border: 1px solid var(--line-2); border-radius: var(--radius-sm);

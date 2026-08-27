@@ -51,7 +51,7 @@
               </div>
               <form id="create-panel" class="panel" autocomplete="off">
                 <label class="field">
-                  <span class="field-label">Passphrase <small>12+ characters</small></span>
+                  <span class="field-label">Passphrase <small>12+ characters</small><button id="passphrase-gen" class="linkish" type="button">Generate &amp; copy</button><span id="passphrase-feedback" class="gen-feedback" role="status" aria-live="polite"></span></span>
                   <input id="new-passphrase" type="password" minlength="12" autocomplete="new-password">
                 </label>
                 <p class="field-hint">Encrypts your <code>identity.pem</code> backup. Never sent anywhere.</p>
