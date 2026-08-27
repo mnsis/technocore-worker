@@ -52,7 +52,7 @@
               <form id="create-panel" class="panel" autocomplete="off">
                 <label class="field">
                   <span class="field-label">Passphrase <small>12+ characters</small></span>
-                  <input id="new-passphrase" type="password" minlength="12" autocomplete="new-password">
+                  <input id="new-passphrase" type="password" minlength="12" autocomplete="off">
                 </label>
                 <p class="field-hint">Encrypts your <code>identity.pem</code> backup. Never sent anywhere.</p>
                 <button id="create" class="btn btn-primary" type="button">Create identity</button>
@@ -60,7 +60,7 @@
               <form id="import-panel" class="panel" autocomplete="off" hidden>
                 <div class="field-row">
                   <label class="field"><span class="field-label">identity.pem</span><input id="pem-file" type="file" accept=".pem,application/x-pem-file"></label>
-                  <label class="field"><span class="field-label">Passphrase</span><input id="import-passphrase" type="password" autocomplete="current-password"></label>
+                  <label class="field"><span class="field-label">Passphrase</span><input id="import-passphrase" type="password" autocomplete="off"></label>
                 </div>
                 <p class="note warn">Use a Technocore identity.pem only. Never enter a wallet seed phrase or wallet private key.</p>
                 <button id="import" class="btn btn-primary" type="button">Import locally</button>
