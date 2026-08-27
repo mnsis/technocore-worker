@@ -86,18 +86,23 @@ async function pollReply(expected) {
 }
 function resultState(value) { return value === "CONFIRMED" ? "confirmed" : value === "UNAVAILABLE" ? "secondary" : value === "NOT REQUESTED" ? "neutral" : ""; }
 function setResultValue(id, value) { const target = byId(id); target.textContent = value || "UNAVAILABLE"; target.className = resultState(target.textContent); }
+function setFileRow(id, value, requested) {
+  byId(id).closest(".rc").hidden = !requested;
+  if (requested) setResultValue(id, value);
+}
 function showResult(result, elapsed, requestContext) {
   stopElapsed();
+  const fileRequested = Boolean(requestContext.path);
   const values = { repository: result.checks?.repository?.status || "UNAVAILABLE", commit: result.checks?.commit?.status || "UNAVAILABLE", file: filePresentation(result, requestContext.path) };
   const duration = `${(elapsed / 1000).toFixed(1)}s`; const safe = values.repository === "CONFIRMED" && values.commit === "CONFIRMED" && ["CONFIRMED", "NOT REQUESTED"].includes(values.file);
   currentReceipt = { repository: requestContext.repository, commit: requestContext.commit, path: requestContext.path, repositoryStatus: values.repository, commitStatus: values.commit, fileStatus: values.file, requesterDid: result.request.did, workerDid: result.worker, requestSequence: result.request.seq, requestDigest: result.request.sha256, protocol: result.v, receiptId: receiptId(result.request.sha256), duration };
   byId("shareable-receipt").hidden = !safe; byId("neutral-result").hidden = safe;
   if (safe) {
-    setResultValue("result-repository", values.repository); setResultValue("result-commit", values.commit); setResultValue("result-file", values.file);
+    setResultValue("result-repository", values.repository); setResultValue("result-commit", values.commit); setFileRow("result-file", values.file, fileRequested);
     byId("receipt-id").textContent = currentReceipt.receiptId; byId("receipt-repository").textContent = currentReceipt.repository; byId("receipt-commit").textContent = currentReceipt.commit; byId("result-time").textContent = duration;
     byId("result-requester").textContent = currentReceipt.requesterDid; byId("result-worker").textContent = currentReceipt.workerDid; byId("provenance-commit").textContent = currentReceipt.commit; byId("provenance-sequence").textContent = String(currentReceipt.requestSequence); byId("provenance-digest").textContent = currentReceipt.requestDigest; byId("provenance-version").textContent = currentReceipt.protocol;
   } else {
-    setResultValue("neutral-repository", values.repository); setResultValue("neutral-commit", values.commit); setResultValue("neutral-file", values.file); byId("neutral-result-time").textContent = duration;
+    setResultValue("neutral-repository", values.repository); setResultValue("neutral-commit", values.commit); setFileRow("neutral-file", values.file, fileRequested); byId("neutral-result-time").textContent = duration;
   }
   byId("github-stage").hidden = true; byId("identity-stage").hidden = true; byId("control-stage").hidden = true; byId("result-stage").hidden = false; setProgress("result", ["identity", "control", "github"]); status("Response received", "ok");
 }

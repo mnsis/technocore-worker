@@ -17,7 +17,8 @@ export function copyReceiptText(data) {
   return [
     "Technocore check", "", data.repository, data.commit, "",
     `Repository: ${data.repositoryStatus}`, `Commit: ${data.commitStatus}`,
-    `File: ${data.fileStatus}`, "", "Checked through Technocore",
+    ...(data.path ? [`File: ${data.fileStatus}`] : []),
+    "", "Checked through Technocore",
     `Receipt: ${data.receiptId}`, "", `Worker: ${abbreviate(data.workerDid)}`,
   ].join("\n");
 }
@@ -79,7 +80,8 @@ export async function drawReceipt(canvas, data, includeDid = true) {
   const repositoryBottom = 216 + (repositoryLines.length - 1) * 50;
   canvasText(context, abbreviate(data.commit, 12, 8), 74, repositoryBottom + 42, { font: `600 20px ${MONO_FONT}`, color: "#9eacbd" });
 
-  const rows = [["REPOSITORY", data.repositoryStatus], ["COMMIT", data.commitStatus], ["FILE", data.fileStatus]];
+  const rows = [["REPOSITORY", data.repositoryStatus], ["COMMIT", data.commitStatus]];
+  if (data.path) rows.push(["FILE", data.fileStatus]);
   const statusY = Math.max(390, repositoryBottom + 95);
   rows.forEach(([label, value], index) => {
     const x = 74 + index * 250; const y = statusY;
