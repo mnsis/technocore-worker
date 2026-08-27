@@ -5,6 +5,8 @@ import { copyReceiptText, drawReceipt, filePresentation, receiptId, xShareText }
 let privateKey = null; let did = null; let downloaded = false; let controlProved = false; let pollAbort = null; let pemBlobUrl = null; let elapsedTimer = null; let currentReceipt = null; let feedbackTimer = null;
 const byId = (id) => document.getElementById(id);
 const status = (message, kind = "") => { byId("status").textContent = message; byId("status").dataset.kind = kind; };
+// Broadcast that the primary workflow moved on, so the wallet module can re-hide a revealed recovery phrase.
+const signalActivity = () => document.dispatchEvent(new Event("tc:workflow-activity"));
 const fieldRules = {
   repository: { valid: (value) => /^[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(value) },
   commit: { valid: (value) => /^[0-9a-fA-F]{40}$/.test(value) },
@@ -68,6 +70,7 @@ byId("import").addEventListener("click", async () => {
 });
 
 function resetGithub() {
+  signalActivity();
   pollAbort?.abort(); stopElapsed(); currentReceipt = null; clearTimeout(feedbackTimer); byId("share-feedback").textContent = ""; byId("copy-receipt").textContent = "Copy"; byId("include-did-image").checked = true; byId("provenance").open = false; document.body.classList.remove("job-active"); document.querySelector(".workspace").classList.remove("job-active"); byId("download").textContent = "Download identity.pem"; byId("result-stage").hidden = true; byId("checking").hidden = true; byId("github-stage").hidden = false; byId("github-form-wrap").hidden = false; byId("repository").value = ""; byId("commit").value = ""; byId("path").value = ""; touchedFields.clear();
   byId("identity-stage").hidden = false; byId("control-stage").hidden = false; for (const item of byId("execution").children) item.className = ""; validateContribution(); setProgress("github", ["identity", "control"]); status("Ready for another check", "ok");
 }
@@ -86,23 +89,27 @@ async function pollReply(expected) {
 }
 function resultState(value) { return value === "CONFIRMED" ? "confirmed" : value === "UNAVAILABLE" ? "secondary" : value === "NOT REQUESTED" ? "neutral" : ""; }
 function setResultValue(id, value) { const target = byId(id); target.textContent = value || "UNAVAILABLE"; target.className = resultState(target.textContent); }
-function setFileRow(id, value, requested) {
-  byId(id).closest(".rc").hidden = !requested;
-  if (requested) setResultValue(id, value);
+// Present a check row, or hide it entirely when it was not requested or an internal
+// NOT_CHECKED state means a prerequisite stopped it from running.
+function setCheckRow(id, value, requested = true) {
+  const shown = requested && value !== "NOT_CHECKED";
+  byId(id).closest(".rc").hidden = !shown;
+  if (shown) { setResultValue(id, value); } else { byId(id).textContent = ""; byId(id).className = ""; }
 }
 function showResult(result, elapsed, requestContext) {
   stopElapsed();
+  signalActivity();
   const fileRequested = Boolean(requestContext.path);
   const values = { repository: result.checks?.repository?.status || "UNAVAILABLE", commit: result.checks?.commit?.status || "UNAVAILABLE", file: filePresentation(result, requestContext.path) };
   const duration = `${(elapsed / 1000).toFixed(1)}s`; const safe = values.repository === "CONFIRMED" && values.commit === "CONFIRMED" && ["CONFIRMED", "NOT REQUESTED"].includes(values.file);
   currentReceipt = { repository: requestContext.repository, commit: requestContext.commit, path: requestContext.path, repositoryStatus: values.repository, commitStatus: values.commit, fileStatus: values.file, requesterDid: result.request.did, workerDid: result.worker, requestSequence: result.request.seq, requestDigest: result.request.sha256, protocol: result.v, receiptId: receiptId(result.request.sha256), duration };
   byId("shareable-receipt").hidden = !safe; byId("neutral-result").hidden = safe;
   if (safe) {
-    setResultValue("result-repository", values.repository); setResultValue("result-commit", values.commit); setFileRow("result-file", values.file, fileRequested);
+    setCheckRow("result-repository", values.repository); setCheckRow("result-commit", values.commit); setCheckRow("result-file", values.file, fileRequested);
     byId("receipt-id").textContent = currentReceipt.receiptId; byId("receipt-repository").textContent = currentReceipt.repository; byId("receipt-commit").textContent = currentReceipt.commit; byId("result-time").textContent = duration;
     byId("result-requester").textContent = currentReceipt.requesterDid; byId("result-worker").textContent = currentReceipt.workerDid; byId("provenance-commit").textContent = currentReceipt.commit; byId("provenance-sequence").textContent = String(currentReceipt.requestSequence); byId("provenance-digest").textContent = currentReceipt.requestDigest; byId("provenance-version").textContent = currentReceipt.protocol;
   } else {
-    setResultValue("neutral-repository", values.repository); setResultValue("neutral-commit", values.commit); setFileRow("neutral-file", values.file, fileRequested); byId("neutral-result-time").textContent = duration;
+    setCheckRow("neutral-repository", values.repository); setCheckRow("neutral-commit", values.commit); setCheckRow("neutral-file", values.file, fileRequested); byId("neutral-result-time").textContent = duration;
   }
   byId("github-stage").hidden = true; byId("identity-stage").hidden = true; byId("control-stage").hidden = true; byId("result-stage").hidden = false; setProgress("result", ["identity", "control", "github"]); status("Response received", "ok");
 }
@@ -120,6 +127,7 @@ byId("contribution").addEventListener("submit", async (event) => {
   event.preventDefault(); try {
     if (!validateContribution(true)) return; const repository = byId("repository").value.trim(); const commit = byId("commit").value.trim(); const path = byId("path").value.trim();
     if (!downloaded && !confirm("You have not downloaded identity.pem. Continue without a recoverable encrypted copy?")) return;
+    signalActivity();
     byId("github-form-wrap").hidden = true; byId("checking").hidden = false; byId("checking-repository").textContent = repository; byId("checking-commit").textContent = commit; const started = performance.now(); document.body.classList.add("job-active"); document.querySelector(".workspace").classList.add("job-active"); byId("download").textContent = "Download backup"; setProgress("result", ["identity", "control", "github"]); startElapsed(started); status("Preparing signed request");
     const baselineResponse = await fetch("/api/reply-baseline", { headers: { Accept: "application/json" }, cache: "no-store" }); if (!baselineResponse.ok) throw new Error("Worker reply service is temporarily unavailable."); const baseline = await baselineResponse.json(); const replyAfter = baseline.reply_after;
     const job = freshJobId(); const nonce = freshNonce(); const text = canonicalContributionRequest({ job, repository, commit, path: path || undefined, replyAfter }); const body = await signedWrite(privateKey, did, WORKER_INBOX, nonce, text); execution("sent");

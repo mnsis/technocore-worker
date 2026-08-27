@@ -109,10 +109,42 @@ test("requested file preserves absent and unavailable semantics", async ({ page,
   for (const expected of ["FAILED", "NOT_FOUND", "UNAVAILABLE"]) {
     await page.locator("#example").click(); await page.locator("#path").fill("missing.txt"); await page.locator("#send").click();
     await expect(page.locator("#shareable-receipt")).toBeHidden(); await expect(page.locator("#neutral-result")).toBeVisible();
-    if (expected === "FAILED") await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND");
+    if (expected === "FAILED") { await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND"); await expect(page.locator("#neutral-commit")).toBeHidden(); await expect(page.locator("#neutral-file")).toBeHidden(); await expect(page.locator("#neutral-result")).not.toContainText("NOT_CHECKED"); }
     else { await expect(page.locator("#neutral-file")).toHaveText(expected); if (expected === "UNAVAILABLE") await expect(page.locator("#neutral-file")).toHaveClass("secondary"); else await expect(page.locator("#neutral-file")).not.toHaveClass("secondary"); }
     if (expected !== "UNAVAILABLE") await page.locator("#check-another").click();
   }
+});
+
+test("hides downstream check rows rather than showing internal NOT_CHECKED", async ({ page }) => {
+  const did = await createIdentity(page);
+  await mockV2Reply(page, did, { repository: { status: "NOT_FOUND" }, commit: { status: "NOT_CHECKED" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 4 });
+  await page.locator("#repository").fill("owner/repo"); await page.locator("#commit").fill("a".repeat(40)); await page.locator("#path").fill("docs/guide.md");
+  page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click();
+  await expect(page.locator("#neutral-result")).toBeVisible();
+  await expect(page.locator("#neutral-repository")).toHaveText("NOT_FOUND");
+  await expect(page.locator("#neutral-commit")).toBeHidden(); await expect(page.locator("#neutral-file")).toBeHidden();
+  await expect(page.locator("#neutral-result")).not.toContainText("NOT_CHECKED");
+  await expect(page.locator("#neutral-result .rc:visible")).toHaveCount(1);
+});
+
+test("re-hides a revealed wallet recovery phrase when the workflow advances", async ({ page }) => {
+  const did = await createIdentity(page);
+  await page.locator("#wallet-create").click();
+  const revealPhrase = async () => {
+    await page.locator("#wallet-reveal").click(); await page.locator("#wallet-acknowledge").check(); await page.locator("#wallet-confirm-reveal").click();
+    await expect(page.locator("#wallet-phrase-list li")).toHaveCount(12);
+  };
+  await revealPhrase();
+  const release = await mockV2Reply(page, did, { repository: { status: "CONFIRMED" }, commit: { status: "CONFIRMED" }, requested_file: { status: "NOT_CHECKED" } }, { baseline: 0, sequence: 7, wait: true });
+  await page.locator("#example").click(); page.once("dialog", (dialog) => dialog.accept()); await page.locator("#send").click();
+  await expect(page.locator("#checking")).toBeVisible();
+  await expect(page.locator("#wallet-phrase")).toBeHidden(); await expect(page.locator("#wallet-phrase-list li")).toHaveCount(0); await expect(page.locator("#wallet-acknowledge")).not.toBeChecked();
+  await revealPhrase(); release();
+  await expect(page.locator("#shareable-receipt")).toBeVisible();
+  await expect(page.locator("#wallet-phrase")).toBeHidden();
+  await revealPhrase(); await page.locator("#check-another").click();
+  await expect(page.locator("#wallet-phrase")).toBeHidden();
+  await expect(page.locator("#wallet-address")).toBeVisible();
 });
 
 test("browser timeout does not resubmit the Technocore job", async ({ page, browserName }) => {

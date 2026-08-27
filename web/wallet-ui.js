@@ -19,6 +19,10 @@ function feedback(target, normal) {
 function concealPhrase() {
   byId("wallet-reveal-confirm").hidden = true; byId("wallet-phrase").hidden = true; byId("wallet-phrase-list").replaceChildren(); byId("wallet-reveal").hidden = false; byId("wallet-visibility").textContent = "Hidden"; byId("wallet-acknowledge").checked = false; byId("wallet-confirm-reveal").disabled = true;
 }
+// True while the recovery phrase is on screen or the reveal acknowledgement is open.
+function phraseActive() { return !byId("wallet-phrase").hidden || !byId("wallet-reveal-confirm").hidden; }
+// Return the recovery phrase to its hidden state; a fresh explicit reveal is required to see it again.
+function autoConceal() { if (phraseActive()) concealPhrase(); }
 
 function renderWallet() {
   byId("wallet-empty").hidden = true; byId("wallet-ready").hidden = false; byId("wallet-address").textContent = wallet.address;
@@ -41,6 +45,14 @@ byId("wallet-reveal").addEventListener("click", () => { if (!wallet) return; byI
 byId("wallet-acknowledge").addEventListener("change", () => { byId("wallet-confirm-reveal").disabled = !byId("wallet-acknowledge").checked; });
 byId("wallet-confirm-reveal").addEventListener("click", () => { if (!wallet || !byId("wallet-acknowledge").checked) return; renderPhrase(); byId("wallet-reveal-confirm").hidden = true; byId("wallet-phrase").hidden = false; byId("wallet-visibility").textContent = "Visible"; });
 byId("wallet-copy-phrase").addEventListener("click", async () => { if (!wallet || byId("wallet-phrase").hidden) return; try { await copyText(wallet.mnemonic); feedback(byId("wallet-copy-phrase"), "Copy recovery phrase"); } catch { byId("wallet-feedback").textContent = "Clipboard unavailable."; } });
+byId("wallet-hide").addEventListener("click", () => { concealPhrase(); byId("wallet-status").textContent = "Recovery phrase hidden."; });
 byId("wallet-saved").addEventListener("click", () => { if (!wallet) return; phraseSaved = true; concealPhrase(); byId("wallet-saved-state").hidden = false; byId("wallet-status").textContent = "Recovery phrase marked as saved. This site still does not store it."; });
 byId("wallet-create-another").addEventListener("click", () => { if (!wallet) return; const warning = phraseSaved ? "Replace the current in-memory wallet with a new wallet?" : "The current recovery phrase has not been marked as saved. Replace this in-memory wallet anyway?"; if (confirm(warning)) createWallet(); });
+
+// Never leave the recovery phrase casually exposed: re-hide it when the workflow advances
+// (a new check starts or a result renders) or when the wallet loses its active reveal context.
+document.addEventListener("tc:workflow-activity", autoConceal);
+document.addEventListener("focusin", (event) => { if (!byId("wallet-section").contains(event.target)) autoConceal(); });
+document.addEventListener("pointerdown", (event) => { if (!byId("wallet-section").contains(event.target)) autoConceal(); }, true);
+document.addEventListener("visibilitychange", () => { if (document.hidden) autoConceal(); });
 addEventListener("pagehide", () => { wallet = null; });

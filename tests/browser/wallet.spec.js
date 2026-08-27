@@ -45,6 +45,31 @@ test("wallet secrets remain isolated from Technocore and receipt surfaces", asyn
   const download = page.waitForEvent("download"); await page.locator("#download-receipt").click(); await download; const canvas = await page.evaluate(() => window.__canvasText.join("\n")); expect(canvas).not.toContain(secret); expect(canvas).not.toContain(address); expect(traffic.join("\n")).not.toContain(secret); expect(traffic.join("\n")).not.toContain(address);
 });
 
+test("hides the recovery phrase on explicit hide and on losing reveal context", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#wallet-create").click();
+  await reveal(page);
+  await expect(page.locator("#wallet-visibility")).toHaveText("Visible");
+
+  await page.locator("#wallet-hide").click();
+  await expect(page.locator("#wallet-phrase")).toBeHidden();
+  await expect(page.locator("#wallet-phrase-list li")).toHaveCount(0);
+  await expect(page.locator("#wallet-visibility")).toHaveText("Hidden");
+  await expect(page.locator("#wallet-reveal")).toBeVisible();
+
+  await page.locator("#wallet-reveal").click();
+  await expect(page.locator("#wallet-confirm-reveal")).toBeDisabled();
+  await page.locator("#wallet-acknowledge").check();
+  await page.locator("#wallet-confirm-reveal").click();
+  await expect(page.locator("#wallet-phrase-list li")).toHaveCount(12);
+
+  await page.locator("#new-passphrase").click();
+  await expect(page.locator("#wallet-phrase")).toBeHidden();
+  await expect(page.locator("#wallet-phrase-list li")).toHaveCount(0);
+  await expect(page.locator("#wallet-acknowledge")).not.toBeChecked();
+  await expect(page.locator("#wallet-address")).toBeVisible();
+});
+
 test("wallet controls fit a 390px viewport", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const page = await context.newPage(); await page.goto("/"); await page.locator("#wallet-create").click(); await reveal(page); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await expect(page.locator("#wallet-address")).toBeVisible(); await expect(page.locator("#wallet-phrase-list li")).toHaveCount(12); await context.close();
 });
