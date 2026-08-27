@@ -283,3 +283,43 @@ def test_local_v2_job_registration_binds_session_digest_and_sequence(
     assert fake.confirmed == {
         "session": fake.registered["session"], "job": "browser-bound", "request_sequence": 17,
     }
+
+
+class _StubServer:
+    """Stand-in for ThreadingHTTPServer so serve()'s config wiring can be exercised."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def serve_forever(self) -> None:
+        pass
+
+
+def _configure(monkeypatch: pytest.MonkeyPatch, **kwargs: Any) -> None:
+    from worker import webapp
+
+    monkeypatch.setattr(webapp, "ThreadingHTTPServer", _StubServer)
+    webapp.serve("127.0.0.1", 0, **kwargs)
+
+
+def test_serve_decouples_request_host_from_public_origin(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure(
+        monkeypatch,
+        public_origin="https://technocore-worker.vercel.app",
+        request_host="worker.37.27.18.191.sslip.io",
+    )
+    assert PrototypeHandler.allowed_origins == frozenset({"https://technocore-worker.vercel.app"})
+    assert PrototypeHandler.allowed_hosts == frozenset({"worker.37.27.18.191.sslip.io"})
+    assert PrototypeHandler.secure_cookie is True
+
+
+def test_serve_request_host_defaults_to_public_origin_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    _configure(monkeypatch, public_origin="https://worker.37.27.18.191.sslip.io")
+    assert PrototypeHandler.allowed_hosts == frozenset({"worker.37.27.18.191.sslip.io"})
+    assert PrototypeHandler.allowed_origins == frozenset({"https://worker.37.27.18.191.sslip.io"})
+
+
+@pytest.mark.parametrize("bad", ["evil/../x", "https://evil.test", "a b", "user@host"])
+def test_serve_rejects_malformed_request_host(monkeypatch: pytest.MonkeyPatch, bad: str) -> None:
+    with pytest.raises(ValueError):
+        _configure(monkeypatch, public_origin="https://example.test", request_host=bad)

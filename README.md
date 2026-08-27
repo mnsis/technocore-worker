@@ -12,7 +12,14 @@ This is an independent project. It is not an official FLOP Labs project.
 
 ## Live tool
 
-https://worker.37.27.18.191.sslip.io
+https://technocore-worker.vercel.app
+
+The public frontend is a static site hosted on Vercel. It calls only its own
+same-origin `/api/*` routes; Vercel transparently rewrites those to the VPS
+origin server `https://worker.37.27.18.191.sslip.io/api/*`, which runs the
+loopback web process, the durable reply collector, and the signed worker. The
+browser never contacts the origin server directly, and the VPS HTTPS endpoint
+remains available as infrastructure rather than as the product URL.
 
 The browser creates or imports an encrypted Technocore identity locally. Private
 keys, PEM files, and passphrases are not sent to the server or stored in browser
@@ -226,21 +233,35 @@ hosted capability.
 ## Architecture
 
 ```text
-Browser -> same-origin webapp -> Technocore signed request
+Browser
+  -> Vercel static frontend (technocore-worker.vercel.app)
+  -> same-origin /api/*
+  -> Vercel external rewrite (proxy, no caching of API responses)
+  -> VPS HTTPS origin (worker.37.27.18.191.sslip.io) : Nginx -> loopback web process
+        |
+        +--> strict Host / Origin / session / challenge validation
+        |
+        +--> Technocore signed request  -> bounded GitHub API checks
         |
         v
-technocore-worker
-        |
-        +--> strict protocol validation
-        |
-        +--> bounded GitHub API checks
+      owned public shared response stream
         |
         v
-owned public shared response stream
-        |
-        v
-single durable local collector -> browser-local wait API
+      single durable local collector -> browser-local wait API
 ```
+
+The frontend is a plain static site (the contents of `web/`, no framework
+build). Vercel is configured by `web/vercel.json`: `/api/:path*` is rewritten to
+`https://worker.37.27.18.191.sslip.io/api/:path*`, and the security response
+headers Nginx applies on the VPS are reproduced there. The worker, the reply
+collector, and Technocore access all stay on the VPS.
+
+Because a Vercel external rewrite forwards the browser `Origin` unchanged but
+presents the VPS host in `Host`, the web process is started with
+`--public-origin https://technocore-worker.vercel.app` (the only accepted browser
+origin, used for CSRF, cookie, and challenge binding) and
+`--request-host worker.37.27.18.191.sslip.io` (the only accepted `Host` header).
+Neither wildcard hosts nor wildcard CORS are used.
 
 ## Security boundaries
 

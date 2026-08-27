@@ -1,8 +1,18 @@
 # Browser identity frontend
 
-The public frontend is served at `https://worker.37.27.18.191.sslip.io` through
-TLS-terminating Nginx. The Python application remains bound to loopback and uses
-that exact HTTPS origin for Host, Origin, session, and challenge validation.
+The public frontend is the static site in this directory, hosted on Vercel at
+`https://technocore-worker.vercel.app`. Vercel serves the assets and rewrites
+`/api/*` to the VPS origin server `https://worker.37.27.18.191.sslip.io/api/*`
+(see `vercel.json`). The VPS runs TLS-terminating Nginx in front of the
+loopback-only Python application, which still holds the worker, the reply
+collector, and Technocore access. The browser only ever talks to its own
+Vercel origin.
+
+The Python application accepts exactly one browser `Origin`
+(`https://technocore-worker.vercel.app`, used for Host/Origin/session/challenge
+validation) and exactly one `Host` header (`worker.37.27.18.191.sslip.io`, the
+value a Vercel external rewrite presents). These are configured with
+`--public-origin` and `--request-host`; wildcards are not used.
 
 ## Cryptographic compatibility
 

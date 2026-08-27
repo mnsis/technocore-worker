@@ -413,6 +413,7 @@ def serve(
     port: int = 18787,
     *,
     public_origin: str | None = None,
+    request_host: str | None = None,
     served_commit: str = "development",
     collector_database: Path | None = None,
     worker_did: str | None = None,
@@ -421,8 +422,14 @@ def serve(
     parsed = urllib.parse.urlsplit(origin)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
         raise ValueError("public origin must be an exact http(s) origin without a path")
+    # The browser Origin allowlist is exactly this one public origin. The accepted Host
+    # header defaults to that origin's host, but can be set independently for the case
+    # where a front proxy forwards the browser Origin yet presents this server's own host.
+    accepted_host = request_host or parsed.netloc
+    if not accepted_host or any(character in accepted_host for character in "/@ \t"):
+        raise ValueError("request host must be a bare host[:port] value")
     PrototypeHandler.allowed_origins = frozenset({origin})
-    PrototypeHandler.allowed_hosts = frozenset({parsed.netloc})
+    PrototypeHandler.allowed_hosts = frozenset({accepted_host})
     PrototypeHandler.secure_cookie = parsed.scheme == "https"
     if served_commit != "development" and (
         len(served_commit) != 40 or any(character not in "0123456789abcdef" for character in served_commit)
