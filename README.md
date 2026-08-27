@@ -18,7 +18,13 @@ The browser creates or imports an encrypted Technocore identity locally. Private
 keys, PEM files, and passphrases are not sent to the server or stored in browser
 storage. The public worker checks only the bounded GitHub repository, commit,
 and optional path facts described below; it does not produce an overall
-contribution-verification claim.
+contribution-verification claim. When the repository and commit are both
+`CONFIRMED`, the page can render a shareable check receipt that restates only
+those public GitHub facts.
+
+The page also offers an optional, browser-only EVM wallet generator. It is
+separate from the Technocore DID and is not needed to use the worker. See
+[Optional EVM wallet](#optional-evm-wallet).
 
 The page displays its served source commit and links to this repository for
 inspection. Its public worker DID is
@@ -168,6 +174,48 @@ commit status:     CONFIRMED
 
 Those results confirm only the repository and commit facts described above.
 
+## Check receipts
+
+A shareable receipt is offered only when the repository and commit are both
+`CONFIRMED` and the optional file is `CONFIRMED` or was not requested. It is
+produced entirely in the browser as:
+
+- a copyable text summary;
+- a PNG rendered locally in a `<canvas>`;
+- a pre-filled X post.
+
+The receipt ID is a short display string derived from the bound request
+SHA-256. A receipt restates only the repository, commit, optional path, check
+statuses, worker DID, and, if the user leaves it enabled, the requester DID in
+the PNG. It is not an on-chain proof and not an overall contribution-verification
+claim. `UNAVAILABLE` never produces a receipt.
+
+## Optional EVM wallet
+
+The page includes an optional EVM wallet generator that runs only in the
+browser. It is entirely separate from the Technocore DID: it is not required to
+use the worker, it is not a "FLOP wallet", and it implies no FLOP eligibility,
+allocation, or endorsement by FLOP Labs.
+
+- BIP-39 mnemonic: 12 English words from 128-bit entropy read from
+  `crypto.getRandomValues` (never `Math.random`);
+- BIP-32/BIP-44 derivation at `m/44'/60'/0'/0/0` over secp256k1;
+- EIP-55 checksummed Ethereum address.
+
+Key material is produced by the audited, pinned `ethereum-cryptography`
+library and stays in page memory only:
+
+- generating a wallet makes no network request;
+- nothing is written to `localStorage`, `sessionStorage`, `IndexedDB`, or
+  cookies;
+- no mnemonic, seed, or private key enters a Technocore request, the collector,
+  a receipt, a PNG, an X post, a URL, or a log;
+- the recovery phrase stays hidden until an explicit acknowledge-and-reveal
+  action, and copying it is a separate explicit action;
+- reloading or closing the page discards the wallet.
+
+Anyone who holds the recovery phrase controls the wallet.
+
 ## Development/example capability
 
 `echo-analysis` returns deterministic character count, word count, and SHA-256
@@ -211,6 +259,10 @@ single durable local collector -> browser-local wait API
 - No GitHub credentials required
 - Metadata-only job persistence; fetched response bodies and source files are
   not stored
+- Strict same-origin CSP, no CDN, and no third-party runtime scripts
+- Optional browser EVM wallet secrets never leave page memory: no network on
+  generation, no browser storage, and no exposure through requests, receipts,
+  PNGs, shares, URLs, or logs
 
 ## Running locally
 
@@ -251,6 +303,16 @@ service account and protect the identity and database paths.
 .venv/bin/pytest
 .venv/bin/ruff check .
 .venv/bin/mypy worker
+```
+
+Browser assets live in `web/`. The EVM wallet bundle (`web/wallet.js`) is built
+from `web/wallet-source.js` with esbuild and committed; rebuild and run the
+browser tests with:
+
+```bash
+npm install
+npm run build:wallet
+npm test
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
